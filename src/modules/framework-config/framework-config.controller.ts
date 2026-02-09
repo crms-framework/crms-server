@@ -1,0 +1,47 @@
+import {
+  Controller,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { FrameworkConfigService } from './framework-config.service';
+import { UpsertConfigDto } from './dto/upsert-config.dto';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+
+@ApiTags('Framework Config')
+@ApiBearerAuth()
+@Controller('framework-config')
+export class FrameworkConfigController {
+  constructor(private readonly configService: FrameworkConfigService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List all config grouped by category' })
+  findAll(@Query('category') category?: string) {
+    if (category) return this.configService.findByCategory(category);
+    return this.configService.findAll();
+  }
+
+  @Get(':key')
+  @ApiOperation({ summary: 'Get config by key' })
+  findByKey(@Param('key') key: string) {
+    return this.configService.findByKey(key);
+  }
+
+  @Put(':key')
+  @RequirePermissions('stations', 'update', 'national')
+  @ApiOperation({ summary: 'Upsert config (SuperAdmin/Admin only)' })
+  upsert(@Param('key') key: string, @Body() dto: UpsertConfigDto) {
+    return this.configService.upsert(key, dto);
+  }
+
+  @Delete(':key')
+  @RequirePermissions('stations', 'delete', 'national')
+  @ApiOperation({ summary: 'Delete config (non-system only)' })
+  delete(@Param('key') key: string) {
+    return this.configService.delete(key);
+  }
+}

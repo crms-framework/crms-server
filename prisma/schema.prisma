@@ -1,0 +1,700 @@
+// CRMS Framework - Criminal Record Management System
+// NestJS Backend Prisma Schema
+// Pan-African Digital Public Good
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== AUTHENTICATION & AUTHORIZATION ====================
+
+model Officer {
+  id              String    @id @default(uuid())
+  badge           String    @unique
+  nationalId      String?   @unique
+  name            String
+  email           String?   @unique
+  phone           String?
+  pinHash         String
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  stationId       String
+  station         Station   @relation(fields: [stationId], references: [id])
+  active          Boolean   @default(true)
+  enrollmentDate  DateTime?
+  lastLogin       DateTime?
+  pinChangedAt    DateTime  @default(now())
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  mfaEnabled      Boolean   @default(false)
+  mfaSecret       String?
+  mfaBackupCodes  String[]
+
+  // Photo fields
+  photoUrl          String?
+  photoFileKey      String?
+  photoThumbnailUrl String?
+  photoSmallUrl     String?
+  photoMediumUrl    String?
+  photoHash         String?
+  photoSize         Int?
+  photoUploadedAt   DateTime?
+
+  // USSD Fields
+  ussdPhoneNumber    String?   @unique
+  ussdQuickPinHash   String?
+  ussdEnabled        Boolean   @default(false)
+  ussdRegisteredAt   DateTime?
+  ussdLastUsed       DateTime?
+  ussdDailyLimit     Int       @default(50)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  cases             Case[]
+  auditLogs         AuditLog[]
+  backgroundChecks  BackgroundCheck[]
+  evidence          Evidence[]
+  caseEvidence      CaseEvidence[]
+  amberAlerts       AmberAlert[]
+  wantedPersons     WantedPerson[]
+  persons           Person[]
+  sessions          Session[]
+  ussdQueryLogs     USSDQueryLog[]
+  whatsappSessions  WhatsAppSession[]  @relation("WhatsAppSessions")
+  whatsappNewsletters WhatsAppNewsletter[] @relation("NewsletterCreatedBy")
+  caseNotesCreated   CaseNote[]         @relation("CaseNoteCreatedBy")
+  caseNotesRedacted  CaseNoteRedaction[] @relation("CaseNoteRedactedBy")
+
+  @@index([badge])
+  @@index([nationalId])
+  @@index([stationId])
+  @@index([roleId])
+  @@index([ussdPhoneNumber])
+  @@map("officers")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  officerId    String
+  officer      Officer  @relation(fields: [officerId], references: [id], onDelete: Cascade)
+  deviceInfo   Json?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([sessionToken])
+  @@index([officerId])
+  @@map("sessions")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+  level       Int          @unique
+  permissions Permission[]
+  officers    Officer[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([name])
+  @@index([level])
+  @@map("roles")
+}
+
+model Permission {
+  id       String   @id @default(uuid())
+  resource String
+  action   String
+  scope    String
+  roles    Role[]
+
+  @@unique([resource, action, scope])
+  @@index([resource])
+  @@map("permissions")
+}
+
+// ==================== CORE ENTITIES ====================
+
+model Station {
+  id          String    @id @default(uuid())
+  name        String
+  code        String    @unique
+  location    String
+  district    String?
+  region      String?
+  countryCode String    @default("SLE")
+  phone       String?
+  email       String?
+  latitude    Float?
+  longitude   Float?
+  active      Boolean   @default(true)
+  officers    Officer[]
+  cases       Case[]
+  evidence    Evidence[] @relation("EvidenceStation")
+  vehicles    Vehicle[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([code])
+  @@index([region])
+  @@index([countryCode])
+  @@map("stations")
+}
+
+model Person {
+  id              String        @id @default(uuid())
+  nationalId      String?       @unique
+  idType          String?
+  countryCode     String        @default("SLE")
+  firstName       String
+  lastName        String
+  middleName      String?
+  fullName        String?
+  aliases         String[]
+  dob             DateTime?
+  gender          String?
+  nationality     String        @default("SLE")
+  addressEncrypted String?
+  phoneEncrypted  String?
+  emailEncrypted  String?
+  photoUrl          String?
+  photoFileKey      String?
+  photoThumbnailUrl String?
+  photoSmallUrl     String?
+  photoMediumUrl    String?
+  photoHash         String?
+  photoSize         Int?
+  photoUploadedAt   DateTime?
+  fingerprintHash String?
+  biometricHash   String?
+  isWanted            Boolean   @default(false)
+  wantedSince         DateTime?
+  isDeceasedOrMissing Boolean   @default(false)
+  riskLevel           String?
+  createdById     String
+  createdBy       Officer       @relation(fields: [createdById], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  cases           CasePerson[]
+  wantedPerson    WantedPerson?
+
+  @@index([nationalId])
+  @@index([firstName, lastName])
+  @@index([countryCode])
+  @@index([createdById])
+  @@index([isWanted])
+  @@index([riskLevel])
+  @@map("persons")
+}
+
+model Case {
+  id            String       @id @default(uuid())
+  caseNumber    String       @unique
+  title         String
+  description   String?      @db.Text
+  category      String
+  severity      String
+  status        String       @default("open")
+  incidentDate  DateTime
+  reportedDate  DateTime     @default(now())
+  location      String?
+
+  // GeoCrime fields (Phase 5)
+  latitude      Float?
+  longitude     Float?
+  ward          String?
+  district      String?
+
+  stationId     String
+  station       Station      @relation(fields: [stationId], references: [id])
+  officerId     String
+  officer       Officer      @relation(fields: [officerId], references: [id])
+  persons       CasePerson[]
+  evidence      CaseEvidence[]
+  notes         CaseNote[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([caseNumber])
+  @@index([stationId])
+  @@index([officerId])
+  @@index([status])
+  @@index([category])
+  @@index([incidentDate])
+  @@index([latitude, longitude])
+  @@index([district])
+  @@map("cases")
+}
+
+model CasePerson {
+  id         String   @id @default(uuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  personId   String
+  person     Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  role       String
+  statement  String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([personId])
+  @@unique([caseId, personId, role])
+  @@map("case_persons")
+}
+
+model CaseEvidence {
+  id         String   @id @default(uuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  evidenceId String
+  evidence   Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  addedAt    DateTime @default(now())
+  addedById  String
+  addedBy    Officer  @relation(fields: [addedById], references: [id])
+  notes      String?  @db.Text
+
+  @@index([caseId])
+  @@index([evidenceId])
+  @@unique([caseId, evidenceId])
+  @@map("case_evidence")
+}
+
+model CaseNote {
+  id        String   @id @default(uuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  officerId String?
+  officer   Officer? @relation("CaseNoteCreatedBy", fields: [officerId], references: [id])
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  redaction CaseNoteRedaction?
+
+  @@index([caseId])
+  @@index([officerId])
+  @@map("case_notes")
+}
+
+model CaseNoteRedaction {
+  id              String   @id @default(uuid())
+  caseNoteId      String   @unique
+  caseNote        CaseNote @relation(fields: [caseNoteId], references: [id], onDelete: Cascade)
+  redactedById    String
+  redactedBy      Officer  @relation("CaseNoteRedactedBy", fields: [redactedById], references: [id])
+  redactionReason String   @db.Text
+  redactedAt      DateTime @default(now())
+
+  @@index([caseNoteId])
+  @@index([redactedById])
+  @@index([redactedAt])
+  @@map("case_note_redactions")
+}
+
+model Evidence {
+  id              String   @id @default(uuid())
+  type            String
+  description     String?  @db.Text
+  qrCode          String   @unique
+  cases           CaseEvidence[]
+
+  storageUrl      String?
+  fileKey         String?
+  fileHash        String?
+  fileName        String?
+  fileSize        Int?
+  mimeType        String?
+
+  collectedDate     DateTime
+  collectedById     String
+  collectedBy       Officer  @relation(fields: [collectedById], references: [id])
+  collectedLocation String?
+
+  stationId       String
+  station         Station  @relation("EvidenceStation", fields: [stationId], references: [id])
+  storageLocation String?
+  isSealed        Boolean  @default(false)
+  sealedAt        DateTime?
+  sealedBy        String?
+
+  tags            String[] @default([])
+  status          String   @default("collected")
+  notes           String?  @db.Text
+  chainOfCustody  Json
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([qrCode])
+  @@index([collectedById])
+  @@index([stationId])
+  @@index([status])
+  @@map("evidence")
+}
+
+// ==================== ALERTS ====================
+
+model AmberAlert {
+  id               String    @id @default(uuid())
+  personName       String
+  age              Int?
+  gender           String?
+  description      String    @db.Text
+  photoUrl          String?
+  photoFileKey      String?
+  photoThumbnailUrl String?
+  photoSmallUrl     String?
+  photoMediumUrl    String?
+  photoHash         String?
+  photoSize         Int?
+  photoUploadedAt   DateTime?
+  lastSeenLocation String?
+  lastSeenDate     DateTime?
+  contactPhone     String
+  status           String    @default("active")
+  publishedAt      DateTime?
+  expiresAt        DateTime?
+  createdById      String
+  createdBy        Officer   @relation(fields: [createdById], references: [id])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdById])
+  @@map("amber_alerts")
+}
+
+model WantedPerson {
+  id          String   @id @default(uuid())
+  personId    String?  @unique
+  person      Person?  @relation(fields: [personId], references: [id])
+  name        String
+  aliases     String[]
+  charges     String[]
+  photoUrl          String?
+  photoFileKey      String?
+  photoThumbnailUrl String?
+  photoSmallUrl     String?
+  photoMediumUrl    String?
+  photoHash         String?
+  photoSize         Int?
+  photoUploadedAt   DateTime?
+  description String?  @db.Text
+  reward      Decimal? @db.Decimal(10, 2)
+  dangerLevel       String    @default("medium")
+  status            String    @default("active")
+  warrantNumber     String?   @unique
+  lastSeenLocation  String?
+  lastSeenDate      DateTime?
+  regionalAlert     Boolean   @default(false)
+  priority          Int       @default(50)
+  publishedAt       DateTime?
+  capturedAt        DateTime?
+  capturedLocation  String?
+  createdById       String
+  createdBy   Officer  @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([personId])
+  @@index([createdById])
+  @@map("wanted_persons")
+}
+
+// ==================== BACKGROUND CHECKS ====================
+
+model BackgroundCheck {
+  id            String    @id @default(uuid())
+  nin           String
+  requestedById String?
+  requestedBy   Officer?  @relation(fields: [requestedById], references: [id])
+  requestType   String
+  result        Json
+  status        String    @default("pending")
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  certificateUrl String?
+  phoneNumber   String?
+  ipAddress     String?
+  createdAt     DateTime  @default(now())
+
+  @@index([nin])
+  @@index([requestedById])
+  @@index([phoneNumber])
+  @@index([createdAt])
+  @@map("background_checks")
+}
+
+// ==================== AUDIT & SYNC ====================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String?
+  officerId  String?
+  officer    Officer? @relation(fields: [officerId], references: [id])
+  action     String
+  details    Json
+  ipAddress  String?
+  userAgent  String?
+  stationId  String?
+  success    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([officerId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SyncQueue {
+  id         String    @id @default(uuid())
+  entityType String
+  entityId   String
+  operation  String
+  payload    Json
+  status     String    @default("pending")
+  attempts   Int       @default(0)
+  error      String?
+  createdAt  DateTime  @default(now())
+  syncedAt   DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("sync_queue")
+}
+
+// ==================== USSD ====================
+
+model USSDQueryLog {
+  id            String   @id @default(uuid())
+  officerId     String
+  officer       Officer  @relation(fields: [officerId], references: [id])
+  phoneNumber   String
+  queryType     String
+  searchTerm    String
+  resultSummary String?
+  success       Boolean
+  errorMessage  String?
+  sessionId     String?
+  timestamp     DateTime @default(now())
+
+  @@index([officerId])
+  @@index([timestamp])
+  @@index([queryType])
+  @@index([phoneNumber])
+  @@map("ussd_query_logs")
+}
+
+model Vehicle {
+  id                String    @id @default(uuid())
+  licensePlate      String    @unique
+  ownerNIN          String?
+  ownerName         String?
+  vehicleType       String
+  make              String?
+  model             String?
+  color             String?
+  year              Int?
+  status            String    @default("active")
+  stolenDate        DateTime?
+  stolenReportedBy  String?
+  recoveredDate     DateTime?
+  notes             String?
+  stationId         String
+  station           Station   @relation(fields: [stationId], references: [id])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([licensePlate])
+  @@index([status])
+  @@index([ownerNIN])
+  @@index([stationId])
+  @@map("vehicles")
+}
+
+// ==================== WHATSAPP ====================
+
+model WhatsAppSession {
+  id                String    @id @default(uuid())
+  phoneNumber       String    @unique
+  officerId         String?
+  officer           Officer?  @relation("WhatsAppSessions", fields: [officerId], references: [id], onDelete: Cascade)
+  state             String    @default("MAIN_MENU")
+  selectedQueryType String?
+  searchTerm        String?
+  queryData         Json?
+  pinAttempts       Int       @default(0)
+  expiresAt         DateTime
+  lastActivityAt    DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([phoneNumber])
+  @@index([officerId])
+  @@index([expiresAt])
+  @@map("whatsapp_sessions")
+}
+
+model WhatsAppNewsletter {
+  id              String    @id @default(uuid())
+  channelId       String    @unique
+  name            String
+  description     String?
+  pictureUrl      String?
+  status          String    @default("active")
+  subscriberCount Int?      @default(0)
+  reactionsEnabled Boolean  @default(true)
+  createdById     String
+  createdBy       Officer   @relation("NewsletterCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([channelId])
+  @@index([createdById])
+  @@index([status])
+  @@map("whatsapp_newsletters")
+}
+
+// ==================== FRAMEWORK CONFIG (Phase 4) ====================
+
+model FrameworkConfig {
+  id           String   @id @default(uuid())
+  key          String   @unique
+  category     String
+  value        Json
+  description  String?
+  isSystem     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([category])
+  @@index([key])
+  @@map("framework_config")
+}
+
+model OffenseCategory {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  description     String?
+  parentId        String?
+  parent          OffenseCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children        OffenseCategory[] @relation("CategoryHierarchy")
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([code])
+  @@map("offense_categories")
+}
+
+model PoliceRank {
+  id          String   @id @default(uuid())
+  name        String
+  abbreviation String
+  level       Int      @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([level])
+  @@map("police_ranks")
+}
+
+// ==================== GEOCRIME (Phase 5) ====================
+
+model GeoCrimeAggregate {
+  id            String   @id @default(uuid())
+  region        String
+  category      String
+  period        String
+  periodType    String
+  caseCount     Int      @default(0)
+  latitude      Float
+  longitude     Float
+  updatedAt     DateTime @updatedAt
+
+  @@unique([region, category, period, periodType])
+  @@index([region])
+  @@index([period])
+  @@index([category])
+  @@map("geo_crime_aggregates")
+}
+
+// ==================== INTER-AGENCY (Phase 6) ====================
+
+model Agency {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  type            String
+  apiKey          String   @unique
+  apiKeyPrefix    String
+  contactEmail    String?
+  contactPhone    String?
+  isActive        Boolean  @default(true)
+  permissions     Json
+  ipWhitelist     String[]
+  rateLimit       Int      @default(100)
+  lastAccessedAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  dataRequests    InteragencyRequest[]
+  webhooks        AgencyWebhook[]
+
+  @@index([apiKey])
+  @@index([type])
+  @@map("agencies")
+}
+
+model InteragencyRequest {
+  id            String    @id @default(uuid())
+  agencyId      String
+  agency        Agency    @relation(fields: [agencyId], references: [id])
+  requestType   String
+  entityType    String
+  entityId      String?
+  requestData   Json
+  responseData  Json?
+  status        String    @default("completed")
+  ipAddress     String?
+  responseTime  Int?
+  createdAt     DateTime  @default(now())
+
+  @@index([agencyId])
+  @@index([requestType])
+  @@index([createdAt])
+  @@map("interagency_requests")
+}
+
+model AgencyWebhook {
+  id          String   @id @default(uuid())
+  agencyId    String
+  agency      Agency   @relation(fields: [agencyId], references: [id])
+  event       String
+  url         String
+  secret      String
+  isActive    Boolean  @default(true)
+  failCount   Int      @default(0)
+  lastFiredAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([agencyId])
+  @@index([event])
+  @@map("agency_webhooks")
+}
