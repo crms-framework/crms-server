@@ -52,6 +52,23 @@ export class UploadService {
     return { url, key, expiresIn: 3600 };
   }
 
+  async getObjectBuffer(key: string): Promise<Buffer> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+
+    const response = await this.s3.send(command);
+    const stream = response.Body as NodeJS.ReadableStream;
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    return Buffer.concat(chunks);
+  }
+
   async deleteObject(key: string) {
     const command = new DeleteObjectCommand({
       Bucket: this.bucket,

@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq';
 import { LoggerModule } from 'nestjs-pino';
 import { AppConfigModule } from './common/config/config.module';
 import { DatabaseModule } from './common/database/database.module';
@@ -28,6 +30,7 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { FrameworkConfigModule } from './modules/framework-config/framework-config.module';
 import { GeoCrimeModule } from './modules/geocrime/geocrime.module';
 import { InteragencyModule } from './modules/interagency/interagency.module';
+import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
 
 @Module({
   imports: [
@@ -46,6 +49,16 @@ import { InteragencyModule } from './modules/interagency/interagency.module';
       throttlers: [{ ttl: 60000, limit: 100 }],
     }),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('REDIS_HOST', 'localhost'),
+          port: config.get<number>('REDIS_PORT', 6379),
+        },
+      }),
+    }),
 
     // Health
     HealthModule,
@@ -71,6 +84,7 @@ import { InteragencyModule } from './modules/interagency/interagency.module';
     FrameworkConfigModule,
     GeoCrimeModule,
     InteragencyModule,
+    BulkImportModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

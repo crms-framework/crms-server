@@ -698,3 +698,32 @@ model AgencyWebhook {
   @@index([event])
   @@map("agency_webhooks")
 }
+
+// ==================== BULK IMPORT ====================
+
+model BulkImportJob {
+  id                String    @id @default(uuid())
+  entityType        String    // 'persons', 'cases', 'evidence'
+  status            String    @default("pending") // pending, validating, processing, completed, failed
+  fileName          String?
+  fileKey           String
+  duplicateStrategy String    @default("skip") // skip, update, fail
+  totalRows         Int       @default(0)
+  processedRows     Int       @default(0)
+  successCount      Int       @default(0)
+  errorCount        Int       @default(0)
+  skippedCount      Int       @default(0)
+  errors            Json      @default("[]")
+  summary           Json?
+  officerId         String
+  stationId         String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([officerId])
+  @@index([entityType])
+  @@map("bulk_import_jobs")
+}
