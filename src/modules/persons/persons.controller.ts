@@ -36,6 +36,7 @@ export class PersonsController {
       {
         gender: filters.gender,
         isWanted: filters.isWanted,
+        riskLevel: filters.riskLevel,
         search: filters.search,
       },
       pagination,

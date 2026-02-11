@@ -7,6 +7,7 @@ export interface PersonFilters {
   nationality?: string;
   countryCode?: string;
   isWanted?: boolean;
+  riskLevel?: string;
   createdById?: string;
   search?: string;
 }
@@ -237,6 +238,7 @@ export class PersonsRepository {
     if (filters.nationality) where.nationality = filters.nationality;
     if (filters.countryCode) where.countryCode = filters.countryCode;
     if (filters.isWanted !== undefined) where.isWanted = filters.isWanted;
+    if (filters.riskLevel) where.riskLevel = filters.riskLevel;
     if (filters.createdById) where.createdById = filters.createdById;
 
     if (filters.search) {
