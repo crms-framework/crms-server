@@ -41,7 +41,7 @@ export class EvidenceService {
     ]);
 
     return new PaginatedResponseDto(
-      data,
+      data.map((item) => this.mapEvidenceResponse(item)),
       total,
       pagination.page || 1,
       pagination.limit || 20,
@@ -56,7 +56,7 @@ export class EvidenceService {
 
     await this.logAudit(officerId, 'read', id, { qrCode: evidence.qrCode });
 
-    return evidence;
+    return this.mapEvidenceResponse(evidence);
   }
 
   async findByQrCode(qrCode: string) {
@@ -283,6 +283,18 @@ export class EvidenceService {
       sealed,
       byType: byType.map((r) => ({ type: r.type, count: r._count.id })),
       byStatus: byStatus.map((r) => ({ status: r.status, count: r._count.id })),
+    };
+  }
+
+  private mapEvidenceResponse(evidence: any) {
+    const { collectedBy, collectedDate, cases, ...rest } = evidence;
+    return {
+      ...rest,
+      collectedAt: collectedDate,
+      collectedBy: collectedBy?.name ?? null,
+      collectedById: collectedBy?.id ?? null,
+      case: cases?.[0]?.case ?? null,
+      caseId: cases?.[0]?.caseId ?? null,
     };
   }
 

@@ -36,15 +36,8 @@ export class FrameworkConfigService implements OnModuleInit {
     return this.cache.get(key) ?? null;
   }
 
-  // List all configs grouped by category
   async findAll() {
-    const configs = await this.repo.findAll();
-    const grouped: Record<string, any[]> = {};
-    for (const config of configs) {
-      if (!grouped[config.category]) grouped[config.category] = [];
-      grouped[config.category].push(config);
-    }
-    return grouped;
+    return this.repo.findAll();
   }
 
   async findByKey(key: string) {

@@ -76,6 +76,7 @@ export class CasesRepository {
                 description: true,
                 qrCode: true,
                 status: true,
+                collectedDate: true,
               },
             },
           },

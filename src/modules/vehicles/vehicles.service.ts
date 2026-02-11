@@ -109,6 +109,32 @@ export class VehiclesService {
     return vehicle;
   }
 
+  async delete(id: string, officerId: string) {
+    const vehicle = await this.vehiclesRepository.findById(id);
+    if (!vehicle) {
+      throw new NotFoundException(`Vehicle with ID "${id}" not found`);
+    }
+
+    await this.vehiclesRepository.delete(id);
+
+    await this.createAuditLog({
+      entityType: 'vehicle',
+      entityId: id,
+      officerId,
+      action: 'delete',
+      details: {
+        licensePlate: vehicle.licensePlate,
+        vehicleType: vehicle.vehicleType,
+      },
+    });
+
+    this.logger.log(
+      `Vehicle deleted: ${vehicle.licensePlate} by officer ${officerId}`,
+    );
+
+    return { message: 'Vehicle deleted successfully' };
+  }
+
   async reportStolen(id: string, officerId: string, notes?: string) {
     const vehicle = await this.vehiclesRepository.findById(id);
     if (!vehicle) {

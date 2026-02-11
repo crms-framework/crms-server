@@ -24,6 +24,14 @@ export class VehiclesRepository {
     if (filters.ownerNIN) {
       where.ownerNIN = filters.ownerNIN;
     }
+    if (filters.search) {
+      where.OR = [
+        { licensePlate: { contains: filters.search, mode: 'insensitive' } },
+        { ownerName: { contains: filters.search, mode: 'insensitive' } },
+        { make: { contains: filters.search, mode: 'insensitive' } },
+        { model: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
 
     const orderBy: Prisma.VehicleOrderByWithRelationInput = {};
     if (filters.sortBy) {
@@ -129,6 +137,12 @@ export class VehiclesRepository {
         status: 'impounded',
       },
       include: { station: { select: { id: true, name: true, code: true } } },
+    });
+  }
+
+  async delete(id: string) {
+    return this.prisma.vehicle.delete({
+      where: { id },
     });
   }
 

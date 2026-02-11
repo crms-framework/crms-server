@@ -6,17 +6,23 @@ import {
   Param,
   Body,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AlertsService } from './alerts.service';
+import { PosterService } from './poster/poster.service';
 
 @ApiTags('Alerts')
 @ApiBearerAuth()
 @Controller('alerts')
 export class AlertsController {
-  constructor(private readonly alertsService: AlertsService) {}
+  constructor(
+    private readonly alertsService: AlertsService,
+    private readonly posterService: PosterService,
+  ) {}
 
   @Get('active')
   @RequirePermissions('alerts', 'read', 'station')
@@ -98,6 +104,32 @@ export class AlertsController {
     return this.alertsService.resolveAmberAlert(id, officerId);
   }
 
+  @Get('amber/:id/poster')
+  @RequirePermissions('alerts', 'read', 'station')
+  @ApiOperation({ summary: 'Generate amber alert poster (PDF or image)' })
+  async getAmberAlertPoster(
+    @Param('id') id: string,
+    @Query('format') format: string = 'pdf',
+    @CurrentUser('id') officerId: string,
+    @Res() res: Response,
+  ) {
+    const validFormat = this.posterService.validateFormat(format);
+    const result = await this.posterService.generateAmberAlertPoster(
+      id,
+      validFormat,
+      officerId,
+    );
+
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${result.filename}"`,
+    );
+    res.setHeader('Content-Length', result.size);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(result.buffer);
+  }
+
   // ==================== Wanted Persons ====================
 
   @Get('wanted')
@@ -166,5 +198,31 @@ export class AlertsController {
     @CurrentUser('id') officerId: string,
   ) {
     return this.alertsService.captureWantedPerson(id, body.capturedLocation, officerId);
+  }
+
+  @Get('wanted/:id/poster')
+  @RequirePermissions('alerts', 'read', 'station')
+  @ApiOperation({ summary: 'Generate wanted person poster (PDF or image)' })
+  async getWantedPersonPoster(
+    @Param('id') id: string,
+    @Query('format') format: string = 'pdf',
+    @CurrentUser('id') officerId: string,
+    @Res() res: Response,
+  ) {
+    const validFormat = this.posterService.validateFormat(format);
+    const result = await this.posterService.generateWantedPoster(
+      id,
+      validFormat,
+      officerId,
+    );
+
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${result.filename}"`,
+    );
+    res.setHeader('Content-Length', result.size);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(result.buffer);
   }
 }

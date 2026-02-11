@@ -61,22 +61,35 @@ export class CasesController {
       description?: string;
       category: string;
       severity: string;
-      incidentDate: string;
+      reportedAt?: string;
+      occurredAt?: string;
+      incidentDate?: string;
       location?: string;
       latitude?: number;
       longitude?: number;
       ward?: string;
       district?: string;
-      stationId: string;
+      stationId?: string;
+      assignedToId?: string;
     },
     @CurrentUser() user: any,
   ) {
+    const incidentDateStr = body.occurredAt || body.incidentDate || body.reportedAt;
     return this.casesService.create(
       {
-        ...body,
-        incidentDate: new Date(body.incidentDate),
+        title: body.title,
+        description: body.description,
+        category: body.category,
+        severity: body.severity,
+        incidentDate: new Date(incidentDateStr!),
+        location: body.location,
+        latitude: body.latitude,
+        longitude: body.longitude,
+        ward: body.ward,
+        district: body.district,
+        stationId: body.stationId || user.stationId,
       },
-      user.id,
+      body.assignedToId || user.id,
     );
   }
 

@@ -22,4 +22,9 @@ export class VehicleFilterDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   ownerNIN?: string;
+
+  @ApiPropertyOptional({ description: 'Search across licensePlate, ownerName, make, model' })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

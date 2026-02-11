@@ -44,7 +44,7 @@ export class CasesService {
     ]);
 
     return new PaginatedResponseDto(
-      data,
+      data.map((item) => this.mapCaseResponse(item)),
       total,
       pagination.page || 1,
       pagination.limit || 20,
@@ -59,7 +59,7 @@ export class CasesService {
 
     await this.logAudit(officerId, 'read', id, { caseNumber: caseRecord.caseNumber });
 
-    return caseRecord;
+    return this.mapCaseResponse(caseRecord);
   }
 
   async create(
@@ -258,6 +258,30 @@ export class CasesService {
     });
 
     return note;
+  }
+
+  private mapCaseResponse(caseRecord: any) {
+    const { reportedDate, incidentDate, officer, officerId, notes, evidence, ...rest } = caseRecord;
+    const mapped: any = {
+      ...rest,
+      reportedAt: reportedDate,
+      occurredAt: incidentDate,
+      assignedTo: officer,
+      assignedToId: officerId,
+    };
+    if (notes) {
+      mapped.notes = notes.map((note: any) => {
+        const { officer: noteOfficer, ...noteRest } = note;
+        return { ...noteRest, createdBy: noteOfficer };
+      });
+    }
+    if (evidence) {
+      mapped.evidenceItems = evidence.map((e: any) => {
+        const { collectedDate, ...evRest } = e.evidence;
+        return { ...evRest, collectedAt: collectedDate };
+      });
+    }
+    return mapped;
   }
 
   private async logAudit(
