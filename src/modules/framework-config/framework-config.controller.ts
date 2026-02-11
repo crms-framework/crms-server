@@ -26,6 +26,37 @@ export class FrameworkConfigController {
     return this.configService.findAll();
   }
 
+  @Get('deployment')
+  @RequirePermissions('settings', 'read', 'station')
+  @ApiOperation({ summary: 'Get all deployment configuration' })
+  async getDeploymentConfig() {
+    const keys = [
+      'deployment.country',
+      'deployment.national_id',
+      'deployment.language',
+      'deployment.currency',
+      'deployment.police_structure',
+      'deployment.legal_framework',
+      'deployment.telecom',
+      'deployment.integrations',
+      'deployment.features',
+    ];
+    const results = await Promise.all(
+      keys.map((k) => this.configService.findByKey(k).catch(() => null)),
+    );
+    return {
+      country: results[0],
+      nationalId: results[1],
+      language: results[2],
+      currency: results[3],
+      policeStructure: results[4],
+      legalFramework: results[5],
+      telecom: results[6],
+      integrations: results[7],
+      features: results[8],
+    };
+  }
+
   @Get(':key')
   @RequirePermissions('settings', 'read', 'station')
   @ApiOperation({ summary: 'Get config by key' })
