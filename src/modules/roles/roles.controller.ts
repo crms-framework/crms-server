@@ -22,28 +22,28 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @RequirePermissions('officers', 'read', 'station')
+  @RequirePermissions('roles', 'read', 'station')
   @ApiOperation({ summary: 'List all roles' })
   findAll() {
     return this.rolesService.findAll();
   }
 
   @Get(':id')
-  @RequirePermissions('officers', 'read', 'station')
+  @RequirePermissions('roles', 'read', 'station')
   @ApiOperation({ summary: 'Get role by ID with permissions' })
   findById(@Param('id') id: string) {
     return this.rolesService.findById(id);
   }
 
   @Post()
-  @RequirePermissions('officers', 'create', 'national')
+  @RequirePermissions('roles', 'create', 'national')
   @ApiOperation({ summary: 'Create a new role' })
   create(@Body() dto: CreateRoleDto, @CurrentUser('id') officerId: string) {
     return this.rolesService.create(dto, officerId);
   }
 
   @Patch(':id')
-  @RequirePermissions('officers', 'update', 'national')
+  @RequirePermissions('roles', 'update', 'national')
   @ApiOperation({ summary: 'Update role details' })
   update(
     @Param('id') id: string,
@@ -54,14 +54,14 @@ export class RolesController {
   }
 
   @Delete(':id')
-  @RequirePermissions('officers', 'delete', 'national')
+  @RequirePermissions('roles', 'delete', 'national')
   @ApiOperation({ summary: 'Delete a role (must have no assigned officers)' })
   delete(@Param('id') id: string, @CurrentUser('id') officerId: string) {
     return this.rolesService.delete(id, officerId);
   }
 
   @Post(':id/permissions')
-  @RequirePermissions('officers', 'update', 'national')
+  @RequirePermissions('roles', 'update', 'national')
   @ApiOperation({ summary: 'Add permissions to a role' })
   addPermissions(
     @Param('id') id: string,
@@ -72,7 +72,7 @@ export class RolesController {
   }
 
   @Delete(':id/permissions')
-  @RequirePermissions('officers', 'update', 'national')
+  @RequirePermissions('roles', 'update', 'national')
   @ApiOperation({ summary: 'Remove permissions from a role' })
   removePermissions(
     @Param('id') id: string,
@@ -83,7 +83,7 @@ export class RolesController {
   }
 
   @Put(':id/permissions')
-  @RequirePermissions('officers', 'update', 'national')
+  @RequirePermissions('roles', 'update', 'national')
   @ApiOperation({ summary: 'Replace all permissions on a role' })
   replacePermissions(
     @Param('id') id: string,
@@ -94,7 +94,7 @@ export class RolesController {
   }
 
   @Post(':id/clone')
-  @RequirePermissions('officers', 'create', 'national')
+  @RequirePermissions('roles', 'create', 'national')
   @ApiOperation({ summary: 'Clone a role with all its permissions' })
   cloneRole(
     @Param('id') id: string,

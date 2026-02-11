@@ -12,7 +12,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @RequirePermissions('reports', 'read', 'station')
+  @RequirePermissions('audit', 'read', 'station')
   @ApiOperation({ summary: 'List audit logs with pagination and filters' })
   findAll(
     @Query() pagination: PaginationQueryDto,
@@ -33,7 +33,7 @@ export class AuditController {
   }
 
   @Get(':id')
-  @RequirePermissions('reports', 'read', 'station')
+  @RequirePermissions('audit', 'read', 'station')
   @ApiOperation({ summary: 'Get audit log by ID' })
   findById(@Param('id') id: string) {
     return this.auditService.findById(id);

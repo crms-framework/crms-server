@@ -25,21 +25,21 @@ export class OffenseCategoryController {
   }
 
   @Post()
-  @RequirePermissions('stations', 'create', 'national')
+  @RequirePermissions('settings', 'create', 'national')
   @ApiOperation({ summary: 'Create offense category' })
   create(@Body() dto: CreateOffenseCategoryDto) {
     return this.configService.createOffenseCategory(dto);
   }
 
   @Patch(':id')
-  @RequirePermissions('stations', 'update', 'national')
+  @RequirePermissions('settings', 'update', 'national')
   @ApiOperation({ summary: 'Update offense category' })
   update(@Param('id') id: string, @Body() dto: UpdateOffenseCategoryDto) {
     return this.configService.updateOffenseCategory(id, dto);
   }
 
   @Delete(':id')
-  @RequirePermissions('stations', 'delete', 'national')
+  @RequirePermissions('settings', 'delete', 'national')
   @ApiOperation({ summary: 'Soft delete offense category' })
   remove(@Param('id') id: string) {
     return this.configService.softDeleteOffenseCategory(id);

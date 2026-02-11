@@ -19,6 +19,7 @@ export class FrameworkConfigController {
   constructor(private readonly configService: FrameworkConfigService) {}
 
   @Get()
+  @RequirePermissions('settings', 'read', 'station')
   @ApiOperation({ summary: 'List all config grouped by category' })
   findAll(@Query('category') category?: string) {
     if (category) return this.configService.findByCategory(category);
@@ -26,20 +27,21 @@ export class FrameworkConfigController {
   }
 
   @Get(':key')
+  @RequirePermissions('settings', 'read', 'station')
   @ApiOperation({ summary: 'Get config by key' })
   findByKey(@Param('key') key: string) {
     return this.configService.findByKey(key);
   }
 
   @Put(':key')
-  @RequirePermissions('stations', 'update', 'national')
+  @RequirePermissions('settings', 'update', 'national')
   @ApiOperation({ summary: 'Upsert config (SuperAdmin/Admin only)' })
   upsert(@Param('key') key: string, @Body() dto: UpsertConfigDto) {
     return this.configService.upsert(key, dto);
   }
 
   @Delete(':key')
-  @RequirePermissions('stations', 'delete', 'national')
+  @RequirePermissions('settings', 'delete', 'national')
   @ApiOperation({ summary: 'Delete config (non-system only)' })
   delete(@Param('key') key: string) {
     return this.configService.delete(key);

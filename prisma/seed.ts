@@ -72,6 +72,29 @@ async function main() {
     // Analytics
     { resource: 'analytics', action: 'read', scope: 'station' },
     { resource: 'analytics', action: 'read', scope: 'national' },
+
+    // Roles (Role Management)
+    { resource: 'roles', action: 'create', scope: 'national' },
+    { resource: 'roles', action: 'read', scope: 'station' },
+    { resource: 'roles', action: 'update', scope: 'national' },
+    { resource: 'roles', action: 'delete', scope: 'national' },
+
+    // Audit (Audit Log Access)
+    { resource: 'audit', action: 'read', scope: 'station' },
+    { resource: 'audit', action: 'read', scope: 'national' },
+    { resource: 'audit', action: 'export', scope: 'national' },
+
+    // Settings (System Configuration)
+    { resource: 'settings', action: 'read', scope: 'station' },
+    { resource: 'settings', action: 'read', scope: 'national' },
+    { resource: 'settings', action: 'update', scope: 'national' },
+    { resource: 'settings', action: 'delete', scope: 'national' },
+
+    // Agencies (Inter-Agency Management)
+    { resource: 'agencies', action: 'create', scope: 'national' },
+    { resource: 'agencies', action: 'read', scope: 'national' },
+    { resource: 'agencies', action: 'update', scope: 'national' },
+    { resource: 'agencies', action: 'delete', scope: 'national' },
   ];
 
   const createdPermissions = await Promise.all(
@@ -111,7 +134,31 @@ async function main() {
       level: 2,
       permissions: {
         connect: createdPermissions
-          .filter((p) => ['national', 'region', 'station'].includes(p.scope))
+          .filter(
+            (p) =>
+              ['national', 'station'].includes(p.scope) &&
+              (
+                // Core operations
+                p.resource === 'cases' ||
+                p.resource === 'persons' ||
+                (p.resource === 'evidence' && p.action !== 'delete') ||
+                (p.resource === 'officers' && p.action !== 'delete') ||
+                (p.resource === 'stations' &&
+                  p.action !== 'create' &&
+                  p.action !== 'delete') ||
+                p.resource === 'alerts' ||
+                p.resource === 'bgcheck' ||
+                p.resource === 'reports' ||
+                p.resource === 'vehicles' ||
+                p.resource === 'analytics' ||
+                p.resource === 'bulk-import' ||
+                // Administrative (new)
+                (p.resource === 'roles' && p.action === 'read') ||
+                (p.resource === 'audit' && p.action !== 'delete') ||
+                (p.resource === 'settings' && p.action !== 'delete') ||
+                p.resource === 'agencies'
+              ),
+          )
           .map((p) => ({ id: p.id })),
       },
     },
@@ -126,7 +173,28 @@ async function main() {
       level: 3,
       permissions: {
         connect: createdPermissions
-          .filter((p) => ['station', 'own'].includes(p.scope))
+          .filter(
+            (p) =>
+              ['station', 'own'].includes(p.scope) &&
+              (
+                // Core operations (no delete except cases)
+                p.resource === 'cases' ||
+                (p.resource === 'persons' && p.action !== 'delete') ||
+                (p.resource === 'evidence' && p.action !== 'delete') ||
+                (p.resource === 'officers' && p.action !== 'delete') ||
+                (p.resource === 'stations' && p.action === 'read') ||
+                p.resource === 'alerts' ||
+                p.resource === 'bgcheck' ||
+                p.resource === 'reports' ||
+                (p.resource === 'vehicles' && p.action !== 'delete') ||
+                p.resource === 'analytics' ||
+                (p.resource === 'bulk-import' && p.action !== 'delete') ||
+                // Administrative read-only (new)
+                (p.resource === 'roles' && p.action === 'read') ||
+                (p.resource === 'audit' && p.action === 'read') ||
+                (p.resource === 'settings' && p.action === 'read')
+              ),
+          )
           .map((p) => ({ id: p.id })),
       },
     },
@@ -143,12 +211,18 @@ async function main() {
         connect: createdPermissions
           .filter(
             (p) =>
+              ['station', 'own'].includes(p.scope) &&
+              p.action !== 'delete' &&
               (p.resource === 'cases' ||
                 p.resource === 'persons' ||
                 p.resource === 'evidence' ||
-                p.resource === 'bgcheck') &&
-              ['station', 'own'].includes(p.scope) &&
-              p.action !== 'delete',
+                p.resource === 'bgcheck' ||
+                p.resource === 'vehicles' ||
+                (p.resource === 'officers' && p.action === 'read') ||
+                (p.resource === 'stations' && p.action === 'read') ||
+                (p.resource === 'alerts' && p.action === 'read') ||
+                (p.resource === 'reports' && p.action === 'read') ||
+                (p.resource === 'analytics' && p.action === 'read')),
           )
           .map((p) => ({ id: p.id })),
       },
@@ -164,7 +238,16 @@ async function main() {
       level: 5,
       permissions: {
         connect: createdPermissions
-          .filter((p) => p.resource === 'evidence')
+          .filter(
+            (p) =>
+              p.scope === 'station' &&
+              (p.resource === 'evidence' || // All evidence actions
+                (p.resource === 'cases' && p.action === 'read') ||
+                (p.resource === 'persons' && p.action === 'read') ||
+                (p.resource === 'officers' && p.action === 'read') ||
+                (p.resource === 'stations' && p.action === 'read') ||
+                (p.resource === 'bgcheck' && p.action === 'read')),
+          )
           .map((p) => ({ id: p.id })),
       },
     },
@@ -179,7 +262,7 @@ async function main() {
       level: 6,
       permissions: {
         connect: createdPermissions
-          .filter((p) => p.action === 'read')
+          .filter((p) => p.action === 'read' && p.scope === 'station')
           .map((p) => ({ id: p.id })),
       },
     },
@@ -790,34 +873,9 @@ async function main() {
 
   // ==================== SUMMARY ====================
   console.log('\nSeeding complete!\n');
-  console.log('Login Credentials:');
-  console.log('  SuperAdmin:');
-  console.log('    Badge: SA-00001');
-  console.log('    PIN: 12345678');
-  console.log('\nUSSD Test Credentials:');
-  console.log('  Commander (SC-00001):');
-  console.log('    Phone: +23278123456  Quick PIN: 1234  Enabled (100/day)');
-  console.log('  Officer 1 (OF-00001):');
-  console.log('    Phone: +23279234567  Quick PIN: 5678  Enabled (50/day)');
-  console.log('  Officer 2 (OF-00002):');
-  console.log('    Phone: +23276345678  Quick PIN: 9012  Disabled');
-  console.log('  Officer 3 (OF-00003):');
-  console.log('    Phone: +23277456789  Not USSD-registered');
-  console.log('  Evidence Clerk (EC-00001):');
-  console.log('    Phone: +23278567890  Quick PIN: 3456  Enabled (30/day)');
-  console.log('\nTest Persons:');
-  console.log('  W7RGGVGI: WANTED - Abdul Hassan Kamara (high risk)');
-  console.log('  A5K9M2P7: MISSING - Mary Koroma');
-  console.log('  J8S4X1N3: CLEAN - James Sesay');
-  console.log('  H9B2M6F5: RECORD - Hassan Musa Bangura (1 case)');
-  console.log('\nTest Vehicles:');
-  console.log('  SL-A-1234: STOLEN (Toyota Corolla 2018)');
-  console.log('  SL-B-5678: ACTIVE (Honda Civic 2020)');
-  console.log('  SL-C-9012: STOLEN (Nissan Sentra 2019)');
-  console.log('\nDatabase Summary:');
+  console.log('Database Summary:');
   console.log(`  ${createdPermissions.length} permissions | 6 roles | 3 stations | 6 officers`);
   console.log('  4 persons | 3 vehicles | 2 cases | 1 wanted record | 6 evidence');
-  console.log('\nIMPORTANT: Change SuperAdmin PIN immediately after first login!');
 }
 
 main()

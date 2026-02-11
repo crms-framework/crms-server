@@ -25,21 +25,21 @@ export class PoliceRankController {
   }
 
   @Post()
-  @RequirePermissions('stations', 'create', 'national')
+  @RequirePermissions('settings', 'create', 'national')
   @ApiOperation({ summary: 'Create police rank' })
   create(@Body() dto: CreatePoliceRankDto) {
     return this.configService.createPoliceRank(dto);
   }
 
   @Patch(':id')
-  @RequirePermissions('stations', 'update', 'national')
+  @RequirePermissions('settings', 'update', 'national')
   @ApiOperation({ summary: 'Update police rank' })
   update(@Param('id') id: string, @Body() dto: UpdatePoliceRankDto) {
     return this.configService.updatePoliceRank(id, dto);
   }
 
   @Delete(':id')
-  @RequirePermissions('stations', 'delete', 'national')
+  @RequirePermissions('settings', 'delete', 'national')
   @ApiOperation({ summary: 'Soft delete police rank' })
   remove(@Param('id') id: string) {
     return this.configService.softDeletePoliceRank(id);
