@@ -1,11 +1,26 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { UssdRepository } from './ussd.repository';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { hashPin } from '../../common/utils/hash.util';
+import {
+  UssdOfficerFilterDto,
+  UssdOfficerListItemDto,
+  UssdOfficerDetailDto,
+  PaginatedUssdOfficersDto,
+} from './dto/ussd-officer.dto';
+import {
+  UpdateUssdAccessDto,
+  UpdateUssdAccessResponseDto,
+} from './dto/update-ussd-access.dto';
+import {
+  ResetQuickPinDto,
+  ResetQuickPinResponseDto,
+} from './dto/reset-quick-pin.dto';
 
 enum UssdState {
   MAIN_MENU = 'MAIN_MENU',
@@ -345,6 +360,269 @@ export class UssdService {
       this.ussdRepository.countByOfficer(officerId),
     ]);
     return new PaginatedResponseDto(data, total, page, limit);
+  }
+
+  /**
+   * Get paginated list of officers with USSD status
+   */
+  async getOfficersWithUssdStatus(
+    filters: UssdOfficerFilterDto,
+  ): Promise<PaginatedUssdOfficersDto> {
+    const { page = 1, limit = 20, stationId, ussdEnabled } = filters;
+    const skip = (page - 1) * limit;
+
+    const where: any = { active: true };
+    if (stationId) {
+      where.stationId = stationId;
+    }
+    if (ussdEnabled !== undefined) {
+      where.ussdEnabled = ussdEnabled;
+    }
+
+    const [officers, total] = await Promise.all([
+      this.prisma.officer.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          badge: true,
+          name: true,
+          stationId: true,
+          station: { select: { name: true } },
+          role: { select: { name: true, level: true } },
+          ussdEnabled: true,
+          ussdQuickPinHash: true,
+          ussdPhoneNumber: true,
+          ussdLastUsed: true,
+        },
+      }),
+      this.prisma.officer.count({ where }),
+    ]);
+
+    // Get query counts for each officer
+    const officerIds = officers.map((o) => o.id);
+    const queryCounts = await this.prisma.uSSDQueryLog.groupBy({
+      by: ['officerId'],
+      where: { officerId: { in: officerIds } },
+      _count: { id: true },
+    });
+
+    const queryCountMap = new Map(
+      queryCounts.map((qc) => [qc.officerId, qc._count.id]),
+    );
+
+    const data: UssdOfficerListItemDto[] = officers.map((officer) => ({
+      id: officer.id,
+      badge: officer.badge,
+      name: officer.name,
+      rank: officer.role.name,
+      stationId: officer.stationId,
+      stationName: officer.station.name,
+      ussdEnabled: officer.ussdEnabled,
+      quickPinSet: !!officer.ussdQuickPinHash,
+      phoneNumber: officer.ussdPhoneNumber,
+      lastUssdQuery: officer.ussdLastUsed,
+      queryCount: queryCountMap.get(officer.id) || 0,
+    }));
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get detailed USSD info for a specific officer
+   */
+  async getOfficerUssdDetails(officerId: string): Promise<UssdOfficerDetailDto> {
+    const officer = await this.prisma.officer.findUnique({
+      where: { id: officerId },
+      select: {
+        id: true,
+        badge: true,
+        name: true,
+        role: { select: { name: true } },
+        ussdEnabled: true,
+        ussdQuickPinHash: true,
+        ussdPhoneNumber: true,
+        ussdRegisteredAt: true,
+        ussdLastUsed: true,
+        station: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+      },
+    });
+
+    if (!officer) {
+      throw new NotFoundException(`Officer with ID ${officerId} not found`);
+    }
+
+    // Get query count
+    const queryCount = await this.prisma.uSSDQueryLog.count({
+      where: { officerId },
+    });
+
+    // Get recent queries
+    const recentQueries = await this.prisma.uSSDQueryLog.findMany({
+      where: { officerId },
+      orderBy: { timestamp: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        queryType: true,
+        searchTerm: true,
+        resultSummary: true,
+        success: true,
+        timestamp: true,
+      },
+    });
+
+    return {
+      id: officer.id,
+      badge: officer.badge,
+      name: officer.name,
+      rank: officer.role.name,
+      station: officer.station,
+      ussdEnabled: officer.ussdEnabled,
+      quickPinSet: !!officer.ussdQuickPinHash,
+      phoneNumber: officer.ussdPhoneNumber,
+      registeredAt: officer.ussdRegisteredAt,
+      lastUssdQuery: officer.ussdLastUsed,
+      queryCount,
+      recentQueries: recentQueries.map((q) => ({
+        id: q.id,
+        queryType: q.queryType,
+        queryData: {
+          searchTerm: q.searchTerm,
+          resultSummary: q.resultSummary,
+          success: q.success,
+        },
+        createdAt: q.timestamp,
+      })),
+    };
+  }
+
+  /**
+   * Enable or disable USSD access for an officer
+   */
+  async updateUssdAccess(
+    officerId: string,
+    dto: UpdateUssdAccessDto,
+  ): Promise<UpdateUssdAccessResponseDto> {
+    const officer = await this.prisma.officer.findUnique({
+      where: { id: officerId },
+      select: { id: true, badge: true, name: true },
+    });
+
+    if (!officer) {
+      throw new NotFoundException(`Officer with ID ${officerId} not found`);
+    }
+
+    await this.prisma.officer.update({
+      where: { id: officerId },
+      data: { ussdEnabled: dto.ussdEnabled },
+    });
+
+    this.logger.log(
+      `USSD access ${dto.ussdEnabled ? 'enabled' : 'disabled'} for officer ${officer.badge} (${officer.name})`,
+    );
+
+    return {
+      id: officerId,
+      ussdEnabled: dto.ussdEnabled,
+      message: `USSD access ${dto.ussdEnabled ? 'enabled' : 'disabled'} successfully`,
+    };
+  }
+
+  /**
+   * Reset an officer's Quick PIN for USSD
+   */
+  async resetOfficerQuickPin(
+    officerId: string,
+    dto: ResetQuickPinDto,
+  ): Promise<ResetQuickPinResponseDto> {
+    const officer = await this.prisma.officer.findUnique({
+      where: { id: officerId },
+      select: { id: true, badge: true, name: true },
+    });
+
+    if (!officer) {
+      throw new NotFoundException(`Officer with ID ${officerId} not found`);
+    }
+
+    const hashedPin = await hashPin(dto.newQuickPin);
+
+    await this.prisma.officer.update({
+      where: { id: officerId },
+      data: { ussdQuickPinHash: hashedPin },
+    });
+
+    this.logger.log(
+      `Quick PIN reset for officer ${officer.badge} (${officer.name})`,
+    );
+
+    return {
+      success: true,
+      message: 'Quick PIN reset successfully',
+      officerId,
+    };
+  }
+
+  /**
+   * Export USSD logs for an officer as CSV
+   */
+  async exportOfficerLogsAsCsv(officerId: string): Promise<string> {
+    const officer = await this.prisma.officer.findUnique({
+      where: { id: officerId },
+      select: { badge: true, name: true },
+    });
+
+    if (!officer) {
+      throw new NotFoundException(`Officer with ID ${officerId} not found`);
+    }
+
+    const logs = await this.prisma.uSSDQueryLog.findMany({
+      where: { officerId },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        id: true,
+        queryType: true,
+        searchTerm: true,
+        resultSummary: true,
+        success: true,
+        timestamp: true,
+        sessionId: true,
+      },
+    });
+
+    // Generate CSV
+    const header = 'ID,Query Type,Search Term,Result Summary,Success,Timestamp,Session ID\n';
+    const rows = logs.map((log) => {
+      const escapeCsv = (str: string | null) =>
+        str ? `"${str.replace(/"/g, '""')}"` : '""';
+      return [
+        log.id,
+        log.queryType,
+        escapeCsv(log.searchTerm),
+        escapeCsv(log.resultSummary),
+        log.success ? 'Yes' : 'No',
+        log.timestamp.toISOString(),
+        log.sessionId || '',
+      ].join(',');
+    });
+
+    return header + rows.join('\n');
   }
 
   private continueResponse(message: string) {

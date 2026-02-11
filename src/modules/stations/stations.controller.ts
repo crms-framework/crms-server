@@ -80,4 +80,51 @@ export class StationsController {
   deactivate(@Param('id') id: string, @CurrentUser('id') officerId: string) {
     return this.stationsService.deactivate(id, officerId);
   }
+
+  @Get(':id/officers')
+  @RequirePermissions('officers', 'read', 'station')
+  @ApiOperation({ summary: 'Get officers assigned to a station' })
+  getStationOfficers(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.stationsService.getStationOfficers(
+      id,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
+  }
+
+  @Get(':id/cases')
+  @RequirePermissions('cases', 'read', 'station')
+  @ApiOperation({ summary: 'Get cases from a station' })
+  getStationCases(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: string,
+  ) {
+    return this.stationsService.getStationCases(
+      id,
+      Number(page) || 1,
+      Number(limit) || 20,
+      status,
+    );
+  }
+
+  @Get(':id/vehicles')
+  @RequirePermissions('cases', 'read', 'station')
+  @ApiOperation({ summary: 'Get vehicles assigned to a station' })
+  getStationVehicles(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.stationsService.getStationVehicles(
+      id,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
+  }
 }

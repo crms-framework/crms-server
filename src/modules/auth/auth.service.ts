@@ -91,21 +91,35 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload);
 
+    const refreshSignOpts = {
+      secret: this.config.get<string>('auth.refreshSecret'),
+      expiresIn: this.config.get<string>('auth.refreshExpiry') ?? '7d',
+    };
+    const refreshTokenValue = this.jwtService.sign(
+      { sub: officer.id },
+      refreshSignOpts as any,
+    );
+
     // Audit success
     await this.logAudit(officer.id, 'login', true, { badge }, ipAddress, userAgent);
 
     return {
       accessToken,
+      refreshToken: refreshTokenValue,
       officer: {
         id: officer.id,
         badge: officer.badge,
         name: officer.name,
         email: officer.email,
+        phone: officer.phone,
         roleId: officer.roleId,
         roleName: officer.role.name,
         roleLevel: officer.role.level,
         stationId: officer.stationId,
         stationName: officer.station.name,
+        stationCode: officer.station.code,
+        stationRegion: officer.station.region,
+        stationDistrict: officer.station.district,
         active: officer.active,
         mfaEnabled: officer.mfaEnabled,
         permissions,
@@ -154,10 +168,20 @@ export class AuthService {
     await this.logAudit(adminId, 'pin_reset', true, { targetOfficerId: officerId });
   }
 
-  async refreshToken(payload: JwtPayload) {
+  async refreshToken(token: string) {
+    // Verify the refresh token
+    let decoded: { sub: string };
+    try {
+      decoded = this.jwtService.verify(token, {
+        secret: this.config.get<string>('auth.refreshSecret'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
     // Re-fetch officer to get fresh permissions
     const officer = await this.prisma.officer.findUnique({
-      where: { id: payload.sub },
+      where: { id: decoded.sub },
       include: { role: { include: { permissions: true } }, station: true },
     });
 
@@ -180,7 +204,39 @@ export class AuthService {
       permissions,
     };
 
-    return { accessToken: this.jwtService.sign(newPayload) };
+    const accessToken = this.jwtService.sign(newPayload);
+
+    const refreshOpts = {
+      secret: this.config.get<string>('auth.refreshSecret'),
+      expiresIn: this.config.get<string>('auth.refreshExpiry') ?? '7d',
+    };
+    const refreshTokenValue = this.jwtService.sign(
+      { sub: officer.id },
+      refreshOpts as any,
+    );
+
+    return {
+      accessToken,
+      refreshToken: refreshTokenValue,
+      officer: {
+        id: officer.id,
+        badge: officer.badge,
+        name: officer.name,
+        email: officer.email,
+        phone: officer.phone,
+        roleId: officer.roleId,
+        roleName: officer.role.name,
+        roleLevel: officer.role.level,
+        stationId: officer.stationId,
+        stationName: officer.station.name,
+        stationCode: officer.station.code,
+        stationRegion: officer.station.region,
+        stationDistrict: officer.station.district,
+        active: officer.active,
+        mfaEnabled: officer.mfaEnabled,
+        permissions,
+      },
+    };
   }
 
   private validatePinStrength(pin: string) {

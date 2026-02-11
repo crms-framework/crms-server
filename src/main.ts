@@ -24,7 +24,12 @@ async function bootstrap() {
   );
 
   // Security & middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Disable CSP in development (configure properly for production)
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.use(compression());
 
   // CORS
@@ -74,8 +79,10 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   await app.listen(port);
-  console.log(`CRMS Server running on http://localhost:${port}`);
-  console.log(`Swagger docs at http://localhost:${port}/api/docs`);
+
+  const logger = app.get(Logger);
+  logger.log(`CRMS Server running on http://localhost:${port}`);
+  logger.log(`Swagger docs at http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

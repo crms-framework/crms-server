@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/database/prisma.service';
 import { WhatsappRepository } from './whatsapp.repository';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import {
+  NewsletterDetailDto,
+  SubscriberFilterDto,
+  PaginatedSubscribersDto,
+  SubscriberDto,
+  PaginatedBroadcastsDto,
+  BroadcastDto,
+} from './dto/newsletter-detail.dto';
 
 enum WaState {
   MAIN_MENU = 'MAIN_MENU',
@@ -407,5 +415,130 @@ export class WhatsappService {
       this.logger.error(`Broadcast failed: ${err.message}`);
       return { sent: false, error: err.message };
     }
+  }
+
+  /**
+   * Get newsletter details with basic info
+   * Note: Subscribers and broadcasts not implemented in schema yet
+   */
+  async getNewsletterDetails(id: string): Promise<NewsletterDetailDto> {
+    const newsletter = await this.prisma.whatsAppNewsletter.findUnique({
+      where: { id },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            badge: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!newsletter) {
+      throw new NotFoundException(`Newsletter not found: ${id}`);
+    }
+
+    return {
+      id: newsletter.id,
+      name: newsletter.name,
+      description: newsletter.description,
+      channelId: newsletter.channelId,
+      isActive: newsletter.status === 'active',
+      subscriberCount: newsletter.subscriberCount || 0,
+      broadcastCount: 0, // Not implemented yet
+      createdBy: newsletter.createdBy,
+      createdAt: newsletter.createdAt,
+      updatedAt: newsletter.updatedAt,
+      subscribers: [], // Not implemented yet
+      recentBroadcasts: [], // Not implemented yet
+    };
+  }
+
+  /**
+   * Archive/delete a newsletter (soft delete)
+   */
+  async archiveNewsletter(id: string): Promise<{ success: boolean; message: string }> {
+    const newsletter = await this.prisma.whatsAppNewsletter.findUnique({
+      where: { id },
+    });
+
+    if (!newsletter) {
+      throw new NotFoundException(`Newsletter not found: ${id}`);
+    }
+
+    await this.prisma.whatsAppNewsletter.update({
+      where: { id },
+      data: { status: 'archived' },
+    });
+
+    this.logger.log(`Newsletter ${newsletter.name} (${id}) archived`);
+
+    return {
+      success: true,
+      message: 'Newsletter archived successfully',
+    };
+  }
+
+  /**
+   * Get paginated list of newsletter subscribers
+   * Note: Subscriber model not implemented in schema yet
+   */
+  async getNewsletterSubscribers(
+    newsletterId: string,
+    filters: SubscriberFilterDto,
+  ): Promise<PaginatedSubscribersDto> {
+    const { page = 1, limit = 20 } = filters;
+
+    // Verify newsletter exists
+    const newsletter = await this.prisma.whatsAppNewsletter.findUnique({
+      where: { id: newsletterId },
+    });
+
+    if (!newsletter) {
+      throw new NotFoundException(`Newsletter not found: ${newsletterId}`);
+    }
+
+    // Return empty list - subscriber tracking not yet implemented
+    return {
+      data: [],
+      meta: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+      },
+    };
+  }
+
+  /**
+   * Get paginated broadcast history for a newsletter
+   * Note: Broadcast model not implemented in schema yet
+   */
+  async getNewsletterBroadcasts(
+    newsletterId: string,
+    filters: SubscriberFilterDto,
+  ): Promise<PaginatedBroadcastsDto> {
+    const { page = 1, limit = 20 } = filters;
+
+    // Verify newsletter exists
+    const newsletter = await this.prisma.whatsAppNewsletter.findUnique({
+      where: { id: newsletterId },
+    });
+
+    if (!newsletter) {
+      throw new NotFoundException(`Newsletter not found: ${newsletterId}`);
+    }
+
+    // Return empty list - broadcast history not yet implemented
+    return {
+      data: [],
+      meta: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+      },
+    };
   }
 }

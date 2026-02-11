@@ -200,7 +200,7 @@ export class AnalyticsRepository {
    * Get recent activity from audit logs.
    */
   async getRecentActivity(limit: number) {
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       take: limit,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -213,5 +213,84 @@ export class AnalyticsRepository {
         },
       },
     });
+
+    return logs.map((log) => ({
+      id: log.id,
+      entityType: log.entityType,
+      action: log.action,
+      officerName: log.officer?.name || 'System',
+      officerBadge: log.officer?.badge || 'SYSTEM',
+      timestamp: log.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Get person statistics: total, wanted, high risk, with biometrics.
+   * Optionally scoped to a single station.
+   */
+  async getPersonStats(stationId?: string) {
+    const where = stationId ? { createdBy: { stationId } } : {};
+
+    const [total, wanted, highRisk, withBiometrics] = await Promise.all([
+      this.prisma.person.count({ where }),
+      this.prisma.person.count({
+        where: { ...where, isWanted: true },
+      }),
+      this.prisma.person.count({
+        where: { ...where, riskLevel: 'high' },
+      }),
+      this.prisma.person.count({
+        where: {
+          ...where,
+          OR: [
+            { fingerprintHash: { not: null } },
+            { biometricHash: { not: null } },
+          ],
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      wanted,
+      highRisk,
+      withBiometrics,
+    };
+  }
+
+  /**
+   * Get count of stale cases (no activity in 30+ days, not closed).
+   * Optionally scoped to a single station.
+   */
+  async getStaleCases(stationId?: string) {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const where: Record<string, any> = {
+      updatedAt: { lt: thirtyDaysAgo },
+      status: { not: 'closed' },
+    };
+
+    if (stationId) {
+      where.stationId = stationId;
+    }
+
+    return this.prisma.case.count({ where });
+  }
+
+  /**
+   * Get count of digital evidence (has file attached).
+   * Optionally scoped to a single station.
+   */
+  async getDigitalEvidenceCount(stationId?: string) {
+    const where: Record<string, any> = {
+      storageUrl: { not: null },
+    };
+
+    if (stationId) {
+      where.stationId = stationId;
+    }
+
+    return this.prisma.evidence.count({ where });
   }
 }

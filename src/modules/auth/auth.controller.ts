@@ -36,11 +36,11 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Refresh access token' })
-  async refresh(@CurrentUser() user: any) {
-    return this.authService.refreshToken(user);
+  async refresh(@Body() body: { refreshToken: string }) {
+    return this.authService.refreshToken(body.refreshToken);
   }
 
   @Post('change-pin')

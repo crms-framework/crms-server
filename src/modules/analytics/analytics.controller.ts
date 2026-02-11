@@ -1,7 +1,8 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsCacheInterceptor } from './interceptors/analytics-cache.interceptor';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
@@ -14,6 +15,14 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Get full dashboard overview' })
   getOverview(@Query('stationId') stationId?: string) {
     return this.analyticsService.getOverview(stationId);
+  }
+
+  @Get('dashboard')
+  @UseInterceptors(AnalyticsCacheInterceptor)
+  @RequirePermissions('reports', 'read', 'station')
+  @ApiOperation({ summary: 'Get comprehensive dashboard statistics for client' })
+  getDashboard(@Query('stationId') stationId?: string) {
+    return this.analyticsService.getDashboardStats(stationId);
   }
 
   @Get('cases')

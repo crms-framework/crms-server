@@ -5,11 +5,15 @@ export class OfficerResponseDto {
   @ApiProperty() badge: string;
   @ApiProperty() name: string;
   @ApiProperty() email: string | null;
+  @ApiProperty() phone: string | null;
   @ApiProperty() roleId: string;
   @ApiProperty() roleName: string;
   @ApiProperty() roleLevel: number;
   @ApiProperty() stationId: string;
   @ApiProperty() stationName: string;
+  @ApiProperty() stationCode: string;
+  @ApiProperty() stationRegion: string;
+  @ApiProperty() stationDistrict: string;
   @ApiProperty() active: boolean;
   @ApiProperty() mfaEnabled: boolean;
   @ApiProperty() permissions: PermissionDto[];

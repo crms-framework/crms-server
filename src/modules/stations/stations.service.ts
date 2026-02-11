@@ -174,6 +174,134 @@ export class StationsService {
     };
   }
 
+  /**
+   * Get officers assigned to a station
+   */
+  async getStationOfficers(stationId: string, page = 1, limit = 20) {
+    // Verify station exists
+    const station = await this.stationsRepository.findById(stationId);
+    if (!station) {
+      throw new NotFoundException(`Station not found: ${stationId}`);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [officers, total] = await Promise.all([
+      this.prisma.officer.findMany({
+        where: { stationId, active: true },
+        skip,
+        take: limit,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          badge: true,
+          name: true,
+          phone: true,
+          email: true,
+          roleId: true,
+          role: {
+            select: {
+              name: true,
+              level: true,
+            },
+          },
+          createdAt: true,
+        },
+      }),
+      this.prisma.officer.count({ where: { stationId, active: true } }),
+    ]);
+
+    return new PaginatedResponseDto(officers, total, page, limit);
+  }
+
+  /**
+   * Get cases from a station
+   */
+  async getStationCases(
+    stationId: string,
+    page = 1,
+    limit = 20,
+    status?: string,
+  ) {
+    // Verify station exists
+    const station = await this.stationsRepository.findById(stationId);
+    if (!station) {
+      throw new NotFoundException(`Station not found: ${stationId}`);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const where: any = { stationId };
+    if (status) {
+      where.status = status;
+    }
+
+    const [cases, total] = await Promise.all([
+      this.prisma.case.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          caseNumber: true,
+          title: true,
+          category: true,
+          severity: true,
+          status: true,
+          incidentDate: true,
+          createdAt: true,
+          officer: {
+            select: {
+              badge: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.case.count({ where }),
+    ]);
+
+    return new PaginatedResponseDto(cases, total, page, limit);
+  }
+
+  /**
+   * Get vehicles assigned to a station
+   */
+  async getStationVehicles(stationId: string, page = 1, limit = 20) {
+    // Verify station exists
+    const station = await this.stationsRepository.findById(stationId);
+    if (!station) {
+      throw new NotFoundException(`Station not found: ${stationId}`);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [vehicles, total] = await Promise.all([
+      this.prisma.vehicle.findMany({
+        where: { stationId },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          licensePlate: true,
+          vehicleType: true,
+          make: true,
+          model: true,
+          year: true,
+          color: true,
+          status: true,
+          ownerName: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.vehicle.count({ where: { stationId } }),
+    ]);
+
+    return new PaginatedResponseDto(vehicles, total, page, limit);
+  }
+
   private async logAudit(
     officerId: string,
     action: string,

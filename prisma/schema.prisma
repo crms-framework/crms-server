@@ -1,3 +1,5 @@
+
+
 // CRMS Framework - Criminal Record Management System
 // NestJS Backend Prisma Schema
 // Pan-African Digital Public Good
@@ -9,6 +11,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ==================== AUTHENTICATION & AUTHORIZATION ====================
@@ -232,6 +235,11 @@ model Case {
   @@index([incidentDate])
   @@index([latitude, longitude])
   @@index([district])
+  // Analytics optimization - groupBy queries with stationId filter
+  @@index([stationId, status])
+  @@index([stationId, category])
+  @@index([stationId, severity])
+  @@index([stationId, updatedAt, status])
   @@map("cases")
 }
 
@@ -338,6 +346,10 @@ model Evidence {
   @@index([collectedById])
   @@index([stationId])
   @@index([status])
+  // Analytics optimization - groupBy queries with stationId filter
+  @@index([stationId, status])
+  @@index([stationId, type])
+  @@index([stationId, storageUrl])
   @@map("evidence")
 }
 

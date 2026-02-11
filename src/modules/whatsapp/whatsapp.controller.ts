@@ -3,11 +3,12 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -17,6 +18,12 @@ import {
   CreateNewsletterDto,
   UpdateNewsletterDto,
 } from './dto/whatsapp-webhook.dto';
+import {
+  NewsletterDetailDto,
+  SubscriberFilterDto,
+  PaginatedSubscribersDto,
+  PaginatedBroadcastsDto,
+} from './dto/newsletter-detail.dto';
 
 @ApiTags('WhatsApp')
 @Controller('whatsapp')
@@ -75,5 +82,46 @@ export class WhatsappController {
     @Body() body: { message: string },
   ) {
     return this.whatsappService.broadcastNewsletter(id, body.message);
+  }
+
+  @Get('newsletters/:id')
+  @ApiBearerAuth()
+  @RequirePermissions('alerts', 'read', 'station')
+  @ApiOperation({ summary: 'Get newsletter details with subscribers and broadcasts' })
+  @ApiResponse({ status: 200, type: NewsletterDetailDto })
+  getNewsletterDetails(@Param('id') id: string) {
+    return this.whatsappService.getNewsletterDetails(id);
+  }
+
+  @Delete('newsletters/:id')
+  @ApiBearerAuth()
+  @RequirePermissions('alerts', 'delete', 'station')
+  @ApiOperation({ summary: 'Archive a newsletter' })
+  archiveNewsletter(@Param('id') id: string) {
+    return this.whatsappService.archiveNewsletter(id);
+  }
+
+  @Get('newsletters/:id/subscribers')
+  @ApiBearerAuth()
+  @RequirePermissions('alerts', 'read', 'station')
+  @ApiOperation({ summary: 'Get newsletter subscribers' })
+  @ApiResponse({ status: 200, type: PaginatedSubscribersDto })
+  getNewsletterSubscribers(
+    @Param('id') id: string,
+    @Query() filters: SubscriberFilterDto,
+  ) {
+    return this.whatsappService.getNewsletterSubscribers(id, filters);
+  }
+
+  @Get('newsletters/:id/broadcasts')
+  @ApiBearerAuth()
+  @RequirePermissions('alerts', 'read', 'station')
+  @ApiOperation({ summary: 'Get newsletter broadcast history' })
+  @ApiResponse({ status: 200, type: PaginatedBroadcastsDto })
+  getNewsletterBroadcasts(
+    @Param('id') id: string,
+    @Query() filters: SubscriberFilterDto,
+  ) {
+    return this.whatsappService.getNewsletterBroadcasts(id, filters);
   }
 }

@@ -112,159 +112,159 @@ async function main() {
   // ==================== ROLES ====================
   console.log('Creating roles...');
 
+  const superAdminPermissionIds = createdPermissions.map((p) => ({ id: p.id }));
+
   const superAdminRole = await prisma.role.upsert({
     where: { name: 'SuperAdmin' },
-    update: {},
+    update: { permissions: { set: superAdminPermissionIds } },
     create: {
       name: 'SuperAdmin',
       description: 'Full system access - All permissions',
       level: 1,
-      permissions: {
-        connect: createdPermissions.map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: superAdminPermissionIds },
     },
   });
 
+  const adminPermissionIds = createdPermissions
+    .filter(
+      (p) =>
+        ['national', 'station'].includes(p.scope) &&
+        (
+          // Core operations
+          p.resource === 'cases' ||
+          p.resource === 'persons' ||
+          (p.resource === 'evidence' && p.action !== 'delete') ||
+          (p.resource === 'officers' && p.action !== 'delete') ||
+          (p.resource === 'stations' &&
+            p.action !== 'create' &&
+            p.action !== 'delete') ||
+          p.resource === 'alerts' ||
+          p.resource === 'bgcheck' ||
+          p.resource === 'reports' ||
+          p.resource === 'vehicles' ||
+          p.resource === 'analytics' ||
+          p.resource === 'bulk-import' ||
+          // Administrative (new)
+          (p.resource === 'roles' && p.action === 'read') ||
+          (p.resource === 'audit' && p.action !== 'delete') ||
+          (p.resource === 'settings' && p.action !== 'delete') ||
+          p.resource === 'agencies'
+        ),
+    )
+    .map((p) => ({ id: p.id }));
+
   const adminRole = await prisma.role.upsert({
     where: { name: 'Admin' },
-    update: {},
+    update: { permissions: { set: adminPermissionIds } },
     create: {
       name: 'Admin',
       description: 'Regional/national administration',
       level: 2,
-      permissions: {
-        connect: createdPermissions
-          .filter(
-            (p) =>
-              ['national', 'station'].includes(p.scope) &&
-              (
-                // Core operations
-                p.resource === 'cases' ||
-                p.resource === 'persons' ||
-                (p.resource === 'evidence' && p.action !== 'delete') ||
-                (p.resource === 'officers' && p.action !== 'delete') ||
-                (p.resource === 'stations' &&
-                  p.action !== 'create' &&
-                  p.action !== 'delete') ||
-                p.resource === 'alerts' ||
-                p.resource === 'bgcheck' ||
-                p.resource === 'reports' ||
-                p.resource === 'vehicles' ||
-                p.resource === 'analytics' ||
-                p.resource === 'bulk-import' ||
-                // Administrative (new)
-                (p.resource === 'roles' && p.action === 'read') ||
-                (p.resource === 'audit' && p.action !== 'delete') ||
-                (p.resource === 'settings' && p.action !== 'delete') ||
-                p.resource === 'agencies'
-              ),
-          )
-          .map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: adminPermissionIds },
     },
   });
 
+  const commanderPermissionIds = createdPermissions
+    .filter(
+      (p) =>
+        ['station', 'own'].includes(p.scope) &&
+        (
+          // Core operations (no delete except cases)
+          p.resource === 'cases' ||
+          (p.resource === 'persons' && p.action !== 'delete') ||
+          (p.resource === 'evidence' && p.action !== 'delete') ||
+          (p.resource === 'officers' && p.action !== 'delete') ||
+          (p.resource === 'stations' && p.action === 'read') ||
+          p.resource === 'alerts' ||
+          p.resource === 'bgcheck' ||
+          p.resource === 'reports' ||
+          (p.resource === 'vehicles' && p.action !== 'delete') ||
+          p.resource === 'analytics' ||
+          (p.resource === 'bulk-import' && p.action !== 'delete') ||
+          // Administrative read-only (new)
+          (p.resource === 'roles' && p.action === 'read') ||
+          (p.resource === 'audit' && p.action === 'read') ||
+          (p.resource === 'settings' && p.action === 'read')
+        ),
+    )
+    .map((p) => ({ id: p.id }));
+
   const commanderRole = await prisma.role.upsert({
     where: { name: 'StationCommander' },
-    update: {},
+    update: { permissions: { set: commanderPermissionIds } },
     create: {
       name: 'StationCommander',
       description: 'Station-level oversight and management',
       level: 3,
-      permissions: {
-        connect: createdPermissions
-          .filter(
-            (p) =>
-              ['station', 'own'].includes(p.scope) &&
-              (
-                // Core operations (no delete except cases)
-                p.resource === 'cases' ||
-                (p.resource === 'persons' && p.action !== 'delete') ||
-                (p.resource === 'evidence' && p.action !== 'delete') ||
-                (p.resource === 'officers' && p.action !== 'delete') ||
-                (p.resource === 'stations' && p.action === 'read') ||
-                p.resource === 'alerts' ||
-                p.resource === 'bgcheck' ||
-                p.resource === 'reports' ||
-                (p.resource === 'vehicles' && p.action !== 'delete') ||
-                p.resource === 'analytics' ||
-                (p.resource === 'bulk-import' && p.action !== 'delete') ||
-                // Administrative read-only (new)
-                (p.resource === 'roles' && p.action === 'read') ||
-                (p.resource === 'audit' && p.action === 'read') ||
-                (p.resource === 'settings' && p.action === 'read')
-              ),
-          )
-          .map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: commanderPermissionIds },
     },
   });
 
+  const officerPermissionIds = createdPermissions
+    .filter(
+      (p) =>
+        ['station', 'own'].includes(p.scope) &&
+        p.action !== 'delete' &&
+        (p.resource === 'cases' ||
+          p.resource === 'persons' ||
+          p.resource === 'evidence' ||
+          p.resource === 'bgcheck' ||
+          p.resource === 'vehicles' ||
+          (p.resource === 'officers' && p.action === 'read') ||
+          (p.resource === 'stations' && p.action === 'read') ||
+          (p.resource === 'alerts' && p.action === 'read') ||
+          (p.resource === 'reports' && p.action === 'read') ||
+          (p.resource === 'analytics' && p.action === 'read')),
+    )
+    .map((p) => ({ id: p.id }));
+
   const officerRole = await prisma.role.upsert({
     where: { name: 'Officer' },
-    update: {},
+    update: { permissions: { set: officerPermissionIds } },
     create: {
       name: 'Officer',
       description: 'Operational police officer',
       level: 4,
-      permissions: {
-        connect: createdPermissions
-          .filter(
-            (p) =>
-              ['station', 'own'].includes(p.scope) &&
-              p.action !== 'delete' &&
-              (p.resource === 'cases' ||
-                p.resource === 'persons' ||
-                p.resource === 'evidence' ||
-                p.resource === 'bgcheck' ||
-                p.resource === 'vehicles' ||
-                (p.resource === 'officers' && p.action === 'read') ||
-                (p.resource === 'stations' && p.action === 'read') ||
-                (p.resource === 'alerts' && p.action === 'read') ||
-                (p.resource === 'reports' && p.action === 'read') ||
-                (p.resource === 'analytics' && p.action === 'read')),
-          )
-          .map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: officerPermissionIds },
     },
   });
 
+  const clerkPermissionIds = createdPermissions
+    .filter(
+      (p) =>
+        p.scope === 'station' &&
+        (p.resource === 'evidence' || // All evidence actions
+          (p.resource === 'cases' && p.action === 'read') ||
+          (p.resource === 'persons' && p.action === 'read') ||
+          (p.resource === 'officers' && p.action === 'read') ||
+          (p.resource === 'stations' && p.action === 'read') ||
+          (p.resource === 'bgcheck' && p.action === 'read')),
+    )
+    .map((p) => ({ id: p.id }));
+
   const clerkRole = await prisma.role.upsert({
     where: { name: 'EvidenceClerk' },
-    update: {},
+    update: { permissions: { set: clerkPermissionIds } },
     create: {
       name: 'EvidenceClerk',
       description: 'Evidence management specialist',
       level: 5,
-      permissions: {
-        connect: createdPermissions
-          .filter(
-            (p) =>
-              p.scope === 'station' &&
-              (p.resource === 'evidence' || // All evidence actions
-                (p.resource === 'cases' && p.action === 'read') ||
-                (p.resource === 'persons' && p.action === 'read') ||
-                (p.resource === 'officers' && p.action === 'read') ||
-                (p.resource === 'stations' && p.action === 'read') ||
-                (p.resource === 'bgcheck' && p.action === 'read')),
-          )
-          .map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: clerkPermissionIds },
     },
   });
 
+  const viewerPermissionIds = createdPermissions
+    .filter((p) => p.action === 'read' && p.scope === 'station')
+    .map((p) => ({ id: p.id }));
+
   const viewerRole = await prisma.role.upsert({
     where: { name: 'Viewer' },
-    update: {},
+    update: { permissions: { set: viewerPermissionIds } },
     create: {
       name: 'Viewer',
       description: 'Read-only access (prosecutors, judges, etc.)',
       level: 6,
-      permissions: {
-        connect: createdPermissions
-          .filter((p) => p.action === 'read' && p.scope === 'station')
-          .map((p) => ({ id: p.id })),
-      },
+      permissions: { connect: viewerPermissionIds },
     },
   });
 

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -6,6 +6,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { LoggerModule } from 'nestjs-pino';
 import { AppConfigModule } from './common/config/config.module';
+import { createLoggerConfig } from './common/config/logger.config';
+import { CacheConfigModule } from './common/cache/cache.module';
 import { DatabaseModule } from './common/database/database.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -32,33 +34,38 @@ import { GeoCrimeModule } from './modules/geocrime/geocrime.module';
 import { InteragencyModule } from './modules/interagency/interagency.module';
 import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
 
+const redisEnabled = process.env.REDIS_ENABLED !== 'false';
+if (!redisEnabled) {
+  new Logger('AppModule').warn(
+    'Redis is disabled (REDIS_ENABLED=false). BullMQ queues and bulk-import will be unavailable.',
+  );
+}
+
 @Module({
   imports: [
     // Infrastructure
     AppConfigModule,
     DatabaseModule,
-    LoggerModule.forRoot({
-      pinoHttp: {
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty', options: { singleLine: true } }
-            : undefined,
-      },
-    }),
+    LoggerModule.forRoot(createLoggerConfig()),
+    CacheConfigModule,
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60000, limit: 100 }],
     }),
     ScheduleModule.forRoot(),
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        connection: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-        },
-      }),
-    }),
+    ...(redisEnabled
+      ? [
+          BullModule.forRootAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+              connection: {
+                host: config.get<string>('REDIS_HOST', 'localhost'),
+                port: config.get<number>('REDIS_PORT', 6379),
+              },
+            }),
+          }),
+        ]
+      : []),
 
     // Health
     HealthModule,
@@ -84,7 +91,7 @@ import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
     FrameworkConfigModule,
     GeoCrimeModule,
     InteragencyModule,
-    BulkImportModule,
+    ...(redisEnabled ? [BulkImportModule] : []),
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
