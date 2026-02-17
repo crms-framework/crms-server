@@ -14,7 +14,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { WhatsappService } from './whatsapp.service';
 import {
-  WhatsappWebhookDto,
   CreateNewsletterDto,
   UpdateNewsletterDto,
 } from './dto/whatsapp-webhook.dto';
@@ -33,8 +32,9 @@ export class WhatsappController {
   @Post('webhook')
   @Public()
   @ApiOperation({ summary: 'WhatsApp webhook endpoint (public — receives Whapi events)' })
-  handleWebhook(@Body() dto: WhatsappWebhookDto) {
-    return this.whatsappService.handleWebhook(dto);
+  handleWebhook(@Body() body: Record<string, any>) {
+    console.log('[WhatsApp Webhook] Incoming payload:', JSON.stringify(body, null, 2));
+    return this.whatsappService.handleWebhook(body);
   }
 
   @Get('newsletters')

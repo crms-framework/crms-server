@@ -11,6 +11,8 @@ import {
   PaginatedBroadcastsDto,
   BroadcastDto,
 } from './dto/newsletter-detail.dto';
+import * as templates from './whatsapp.templates';
+import { WhapiListMessage } from './whatsapp.interfaces';
 
 enum WaState {
   MAIN_MENU = 'MAIN_MENU',
@@ -45,7 +47,13 @@ export class WhatsappService {
       if (message.from_me) continue;
 
       const phoneNumber = message.chat_id?.replace('@s.whatsapp.net', '') || message.from;
-      const text = message.text?.body || message.body || '';
+
+      // Extract list reply ID from interactive list selections, falling back to text
+      let text = message.text?.body || message.body || '';
+      const listReplyId = message.reply?.list_reply?.id;
+      if (listReplyId) {
+        text = listReplyId.replace(/^ListV3:/, '');
+      }
 
       await this.processMessage(phoneNumber, text);
     }
@@ -72,12 +80,18 @@ export class WhatsappService {
 
     const normalizedText = text.trim().toLowerCase();
 
-    // Handle /help or /start commands
-    if (normalizedText === '/help' || normalizedText === '/start' || normalizedText === 'hi') {
+    // Handle /help command
+    if (normalizedText === '/help') {
+      await this.sendMessage(phoneNumber, templates.helpTemplate());
+      return;
+    }
+
+    // Handle /start or greeting
+    if (normalizedText === '/start' || normalizedText === 'hi') {
       await this.whatsappRepository.updateSession(session.id, {
         state: 'MAIN_MENU',
       });
-      await this.sendMessage(phoneNumber, this.getMainMenu());
+      await this.handleMainMenu(session, phoneNumber, normalizedText);
       return;
     }
 
@@ -88,7 +102,7 @@ export class WhatsappService {
         selectedQueryType: null,
         searchTerm: null,
       });
-      await this.sendMessage(phoneNumber, 'Session cancelled. Send /start for the main menu.');
+      await this.sendMessage(phoneNumber, templates.cancelTemplate());
       return;
     }
 
@@ -108,24 +122,22 @@ export class WhatsappService {
           break;
         default:
           await this.whatsappRepository.updateSession(session.id, { state: 'MAIN_MENU' });
-          await this.sendMessage(phoneNumber, this.getMainMenu());
+          await this.handleMainMenu(session, phoneNumber, '');
       }
     } catch (err: any) {
       this.logger.error(`WhatsApp error for ${phoneNumber}: ${err.message}`);
-      await this.sendMessage(
-        phoneNumber,
-        'An error occurred. Send /start to try again.',
-      );
+      await this.sendMessage(phoneNumber, templates.errorTemplate());
     }
   }
 
   private async handleMainMenu(session: any, phoneNumber: string, text: string) {
-    // Check if phone is registered
+    // Check if phone is registered (DB stores numbers with '+' prefix)
+    const dbPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
     const officer = await this.prisma.officer.findFirst({
       where: {
         OR: [
-          { ussdPhoneNumber: phoneNumber },
-          { phone: { contains: phoneNumber } },
+          { ussdPhoneNumber: dbPhone },
+          { phone: { contains: dbPhone } },
         ],
         active: true,
       },
@@ -136,16 +148,11 @@ export class WhatsappService {
         officerId: officer.id,
         state: 'QUERY_TYPE',
       });
-      await this.sendMessage(
-        phoneNumber,
-        `Welcome ${officer.name}! CRMS Field Query Tool\n\nSelect a query:\n1. Wanted Person Check\n2. Missing Person Check\n3. Background Check (NIN)\n4. Vehicle Check\n\nReply with the number.`,
-      );
+      await this.sendMessage(phoneNumber, templates.authSuccessTemplate(officer.name));
+      await this.sendListMessage(templates.mainMenuTemplate(officer.name, phoneNumber));
     } else {
       await this.whatsappRepository.updateSession(session.id, { state: 'AUTH_PIN' });
-      await this.sendMessage(
-        phoneNumber,
-        'CRMS Field Query Tool\n\nYour phone is not registered. Enter your badge number to authenticate:',
-      );
+      await this.sendMessage(phoneNumber, templates.authBadgePromptTemplate());
     }
   }
 
@@ -158,11 +165,11 @@ export class WhatsappService {
       const attempts = (session.pinAttempts || 0) + 1;
       if (attempts >= 3) {
         await this.whatsappRepository.deleteSession(session.id);
-        await this.sendMessage(phoneNumber, 'Too many failed attempts. Session ended.');
+        await this.sendMessage(phoneNumber, templates.authLockedTemplate());
         return;
       }
       await this.whatsappRepository.updateSession(session.id, { pinAttempts: attempts });
-      await this.sendMessage(phoneNumber, `Badge not found. Try again (${3 - attempts} attempts left):`);
+      await this.sendMessage(phoneNumber, templates.authFailTemplate(3 - attempts));
       return;
     }
 
@@ -172,26 +179,31 @@ export class WhatsappService {
       pinAttempts: 0,
     });
 
-    await this.sendMessage(
-      phoneNumber,
-      `Authenticated as ${officer.name}\n\nSelect a query:\n1. Wanted Person Check\n2. Missing Person Check\n3. Background Check (NIN)\n4. Vehicle Check\n\nReply with the number.`,
-    );
+    await this.sendMessage(phoneNumber, templates.authSuccessTemplate(officer.name));
+    await this.sendListMessage(templates.mainMenuTemplate(officer.name, phoneNumber));
   }
 
   private async handleQueryType(session: any, phoneNumber: string, text: string) {
+    // Handle help selection from interactive list
+    if (text === 'help') {
+      await this.sendMessage(phoneNumber, templates.helpTemplate());
+      return;
+    }
+
     const types: Record<string, string> = {
       '1': 'wanted',
       '2': 'missing',
       '3': 'background',
       '4': 'vehicle',
+      'wanted': 'wanted',
+      'missing': 'missing',
+      'background': 'background',
+      'vehicle': 'vehicle',
     };
 
     const queryType = types[text];
     if (!queryType) {
-      await this.sendMessage(
-        phoneNumber,
-        'Invalid selection. Reply with:\n1. Wanted\n2. Missing\n3. Background\n4. Vehicle',
-      );
+      await this.sendMessage(phoneNumber, templates.invalidSelectionTemplate());
       return;
     }
 
@@ -200,14 +212,7 @@ export class WhatsappService {
       state: 'SEARCH_TERM',
     });
 
-    const prompts: Record<string, string> = {
-      wanted: 'Enter person name or NIN to search:',
-      missing: 'Enter name to search missing persons:',
-      background: 'Enter NIN for background check:',
-      vehicle: 'Enter license plate number:',
-    };
-
-    await this.sendMessage(phoneNumber, prompts[queryType]);
+    await this.sendMessage(phoneNumber, templates.searchPromptTemplate(queryType));
   }
 
   private async handleSearchTerm(session: any, phoneNumber: string, term: string) {
@@ -231,7 +236,7 @@ export class WhatsappService {
         result = 'Unknown query type.';
     }
 
-    await this.sendMessage(phoneNumber, result + '\n\nSend /start for a new query.');
+    await this.sendMessage(phoneNumber, result);
 
     // Reset to main menu
     await this.whatsappRepository.updateSession(session.id, {
@@ -254,12 +259,9 @@ export class WhatsappService {
       select: { name: true, charges: true, dangerLevel: true, lastSeenLocation: true },
     });
 
-    if (results.length === 0) return 'No active wanted person records found.';
+    if (results.length === 0) return templates.wantedPersonNotFoundTemplate();
 
-    return '*Wanted Person Results*\n\n' +
-      results.map((r, i) =>
-        `${i + 1}. *${r.name}*\nCharges: ${r.charges.join(', ')}\nDanger Level: ${r.dangerLevel}\nLast Seen: ${r.lastSeenLocation || 'Unknown'}`,
-      ).join('\n\n');
+    return templates.wantedPersonResultsTemplate(results);
   }
 
   private async queryMissing(term: string): Promise<string> {
@@ -272,12 +274,9 @@ export class WhatsappService {
       select: { personName: true, age: true, lastSeenLocation: true, contactPhone: true },
     });
 
-    if (results.length === 0) return 'No active missing person alerts found.';
+    if (results.length === 0) return templates.missingPersonNotFoundTemplate();
 
-    return '*Missing Person Results*\n\n' +
-      results.map((r, i) =>
-        `${i + 1}. *${r.personName}*${r.age ? ` (Age: ${r.age})` : ''}\nLast Seen: ${r.lastSeenLocation || 'Unknown'}\nContact: ${r.contactPhone}`,
-      ).join('\n\n');
+    return templates.missingPersonResultsTemplate(results);
   }
 
   private async queryBackground(nin: string): Promise<string> {
@@ -291,17 +290,7 @@ export class WhatsappService {
       },
     });
 
-    if (!person) return `NIN: ${nin}\n*Status: CLEAR*\nNo records found.`;
-
-    if (person.isWanted) {
-      return `NIN: ${nin}\nName: ${person.firstName} ${person.lastName}\n*Status: WANTED*\nCases: ${person.cases.length}\n\n⚠️ This person is WANTED.`;
-    }
-
-    if (person.cases.length > 0) {
-      return `NIN: ${nin}\nName: ${person.firstName} ${person.lastName}\n*Status: RECORD EXISTS*\nCases: ${person.cases.length}\n\nVisit station for details.`;
-    }
-
-    return `NIN: ${nin}\nName: ${person.firstName} ${person.lastName}\n*Status: CLEAR*`;
+    return templates.backgroundCheckResultTemplate(nin, person);
   }
 
   private async queryVehicle(plate: string): Promise<string> {
@@ -318,16 +307,9 @@ export class WhatsappService {
       },
     });
 
-    if (!vehicle) return `Plate: ${plate.toUpperCase()}\nNo records found.`;
+    if (!vehicle) return templates.vehicleNotFoundTemplate(plate);
 
-    const desc = [vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(' ');
-    let result = `*Vehicle: ${vehicle.licensePlate}*\nType: ${vehicle.vehicleType}\n${desc ? `Details: ${desc}\n` : ''}Status: ${vehicle.status.toUpperCase()}`;
-
-    if (vehicle.status === 'stolen') {
-      result += '\n\n🚨 *ALERT: This vehicle is reported STOLEN!*';
-    }
-
-    return result;
+    return templates.vehicleResultTemplate(plate, vehicle);
   }
 
   private async sendMessage(to: string, body: string) {
@@ -351,8 +333,24 @@ export class WhatsappService {
     }
   }
 
-  private getMainMenu(): string {
-    return `*CRMS Field Query Tool* 🔍\n\nWelcome! Available commands:\n\n1. Wanted Person Check\n2. Missing Person Check\n3. Background Check (NIN)\n4. Vehicle Check\n\n/help - Show this menu\n/cancel - Cancel current query\n\nReply with a number to start.`;
+  private async sendListMessage(payload: WhapiListMessage) {
+    if (!this.whapiToken) {
+      this.logger.warn('WHAPI_TOKEN not configured — list message not sent');
+      return;
+    }
+
+    try {
+      await fetch(`${this.whapiUrl}/messages/interactive`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.whapiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err: any) {
+      this.logger.error(`Failed to send WhatsApp list message: ${err.message}`);
+    }
   }
 
   // ==================== Newsletter Management ====================
