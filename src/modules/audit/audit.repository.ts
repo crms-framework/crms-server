@@ -73,8 +73,62 @@ export class AuditRepository {
     userAgent?: string;
     stationId?: string;
     success?: boolean;
+    previousHash?: string;
+    entryHash?: string;
   }) {
     return this.prisma.auditLog.create({ data });
+  }
+
+  async getLatestEntryHash(): Promise<string | null> {
+    const latest = await this.prisma.auditLog.findFirst({
+      where: { entryHash: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { entryHash: true },
+    });
+    return latest?.entryHash ?? null;
+  }
+
+  async updateEntryHash(id: string, entryHash: string) {
+    return this.prisma.auditLog.update({
+      where: { id },
+      data: { entryHash },
+    });
+  }
+
+  async getAuditChainForVerification(startDate?: Date, endDate?: Date) {
+    const where: Record<string, any> = {};
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) where.createdAt.lte = endDate;
+    }
+
+    return this.prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        action: true,
+        officerId: true,
+        createdAt: true,
+        previousHash: true,
+        entryHash: true,
+      },
+    });
+  }
+
+  async getAuditLogsForExport(startDate: Date, endDate: Date) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        createdAt: { gte: startDate, lte: endDate },
+      },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        officer: {
+          select: { id: true, badge: true, name: true },
+        },
+      },
+    });
   }
 
   private buildWhereClause(filters: AuditLogFilters) {

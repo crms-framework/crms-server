@@ -41,6 +41,12 @@ export class EvidenceRepository {
         case: { select: { id: true, caseNumber: true, title: true, status: true } },
       },
     },
+    custodyEvents: {
+      orderBy: { createdAt: 'asc' as const },
+      include: {
+        officer: { select: { id: true, badge: true, name: true } },
+      },
+    },
   };
 
   async findAll(
@@ -105,14 +111,7 @@ export class EvidenceRepository {
         fileSize: data.fileSize,
         mimeType: data.fileMimeType,
         status: 'collected',
-        chainOfCustody: [
-          {
-            officerId: data.collectedById,
-            action: 'collected',
-            timestamp: new Date().toISOString(),
-            location: data.location || null,
-          },
-        ],
+        chainOfCustody: [],
       },
       include: this.defaultInclude,
     });
@@ -149,22 +148,40 @@ export class EvidenceRepository {
     });
   }
 
-  async addCustodyEvent(id: string, event: Record<string, any>) {
-    const evidence = await this.prisma.evidence.findUnique({
-      where: { id },
-      select: { chainOfCustody: true },
+  async createCustodyEvent(data: {
+    evidenceId: string;
+    officerId: string;
+    action: string;
+    fromLocation?: string;
+    toLocation?: string;
+    notes?: string;
+    signature: string;
+  }) {
+    return this.prisma.custodyEvent.create({
+      data,
+      include: {
+        officer: { select: { id: true, badge: true, name: true } },
+      },
     });
+  }
 
-    const chain = (evidence?.chainOfCustody as any[]) || [];
-    chain.push({
-      ...event,
-      timestamp: new Date().toISOString(),
-    });
-
-    return this.prisma.evidence.update({
-      where: { id },
-      data: { chainOfCustody: chain },
-      include: this.defaultInclude,
+  async getCustodyChain(evidenceId: string) {
+    return this.prisma.custodyEvent.findMany({
+      where: { evidenceId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        officer: { select: { id: true, badge: true, name: true } },
+        evidence: {
+          select: {
+            id: true,
+            qrCode: true,
+            type: true,
+            description: true,
+            status: true,
+            isSealed: true,
+          },
+        },
+      },
     });
   }
 

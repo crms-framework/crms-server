@@ -2,7 +2,6 @@ import { Controller, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { AuditFilterDto } from './dto/audit-filter.dto';
 
 @ApiTags('Audit Logs')
@@ -15,7 +14,6 @@ export class AuditController {
   @RequirePermissions('audit', 'read', 'station')
   @ApiOperation({ summary: 'List audit logs with pagination and filters' })
   findAll(
-    @Query() pagination: PaginationQueryDto,
     @Query() filters: AuditFilterDto,
   ) {
     return this.auditService.findAll(
@@ -28,7 +26,20 @@ export class AuditController {
         startDate: filters.startDate ? new Date(filters.startDate) : undefined,
         endDate: filters.endDate ? new Date(filters.endDate) : undefined,
       },
-      pagination,
+      filters,
+    );
+  }
+
+  @Get('verify')
+  @RequirePermissions('audit', 'read', 'national')
+  @ApiOperation({ summary: 'Verify audit log hash chain integrity' })
+  verifyChain(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.auditService.verifyAuditChain(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
     );
   }
 

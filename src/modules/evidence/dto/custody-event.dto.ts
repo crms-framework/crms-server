@@ -10,18 +10,24 @@ export class CustodyEventDto {
 
   @ApiProperty({
     description: 'Custody action being performed',
-    enum: ['collected', 'transferred', 'stored', 'retrieved', 'returned', 'disposed'],
-    example: 'transferred',
+    enum: ['COLLECTED', 'TRANSFERRED', 'EXAMINED', 'SEALED', 'SUBMITTED_TO_COURT', 'RETURNED'],
+    example: 'TRANSFERRED',
   })
   @IsString()
-  @IsIn(['collected', 'transferred', 'stored', 'retrieved', 'returned', 'disposed'])
-  action: 'collected' | 'transferred' | 'stored' | 'retrieved' | 'returned' | 'disposed';
+  @IsIn(['COLLECTED', 'TRANSFERRED', 'EXAMINED', 'SEALED', 'SUBMITTED_TO_COURT', 'RETURNED'])
+  action: string;
 
-  @ApiPropertyOptional({ description: 'Location where the custody event occurred' })
+  @ApiPropertyOptional({ description: 'Location evidence is being transferred from' })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  location?: string;
+  fromLocation?: string;
+
+  @ApiPropertyOptional({ description: 'Location evidence is being transferred to' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  toLocation?: string;
 
   @ApiPropertyOptional({ description: 'Additional notes about the custody event' })
   @IsOptional()

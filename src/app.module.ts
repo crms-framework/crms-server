@@ -11,6 +11,7 @@ import { CacheConfigModule } from './common/cache/cache.module';
 import { DatabaseModule } from './common/database/database.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { DualAuthGuard } from './common/guards/dual-auth.guard';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { OfficersModule } from './modules/officers/officers.module';
@@ -33,6 +34,9 @@ import { FrameworkConfigModule } from './modules/framework-config/framework-conf
 import { GeoCrimeModule } from './modules/geocrime/geocrime.module';
 import { InteragencyModule } from './modules/interagency/interagency.module';
 import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
+import { ApprovalsModule } from './modules/approvals/approvals.module';
+import { IntegrityModule } from './modules/integrity/integrity.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 const redisEnabled = process.env.REDIS_ENABLED !== 'false';
 if (!redisEnabled) {
@@ -91,11 +95,20 @@ if (!redisEnabled) {
     FrameworkConfigModule,
     GeoCrimeModule,
     InteragencyModule,
-    ...(redisEnabled ? [BulkImportModule] : []),
+
+    // Security Governance Modules
+    ApprovalsModule,
+    IntegrityModule,
+
+    // Redis-dependent modules
+    ...(redisEnabled
+      ? [BulkImportModule, NotificationsModule]
+      : []),
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: DualAuthGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

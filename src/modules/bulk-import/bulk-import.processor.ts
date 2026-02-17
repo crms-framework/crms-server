@@ -5,7 +5,7 @@ import { BulkImportRepository } from './bulk-import.repository';
 import { ProcessorRegistry } from './processors/processor.registry';
 import { FieldResolverUtil } from './utils/field-resolver.util';
 import { UploadService } from '../upload/upload.service';
-import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import {
   ImportContext,
   ImportError,
@@ -32,7 +32,7 @@ export class BulkImportProcessor extends WorkerHost {
     private readonly processorRegistry: ProcessorRegistry,
     private readonly fieldResolver: FieldResolverUtil,
     private readonly uploadService: UploadService,
-    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
@@ -243,19 +243,13 @@ export class BulkImportProcessor extends WorkerHost {
     jobId: string,
     details: Record<string, any>,
   ) {
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          entityType: 'bulk-import',
-          entityId: jobId,
-          officerId,
-          action: `bulk_import_${entityType}`,
-          success: true,
-          details,
-        },
-      });
-    } catch (err) {
-      this.logger.error('Audit log write failed', err);
-    }
+    await this.auditService.createAuditLog({
+      entityType: 'bulk-import',
+      entityId: jobId,
+      officerId,
+      action: `bulk_import_${entityType}`,
+      success: true,
+      details,
+    });
   }
 }

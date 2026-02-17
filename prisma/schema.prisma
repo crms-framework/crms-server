@@ -74,6 +74,10 @@ model Officer {
   whatsappNewsletters WhatsAppNewsletter[] @relation("NewsletterCreatedBy")
   caseNotesCreated   CaseNote[]         @relation("CaseNoteCreatedBy")
   caseNotesRedacted  CaseNoteRedaction[] @relation("CaseNoteRedactedBy")
+  custodyEvents        CustodyEvent[]
+  approvalRequests     PendingApproval[]  @relation("ApprovalRequests")
+  approvalDecisions    PendingApproval[]  @relation("ApprovalDecisions")
+  integrityAssignments IntegrityReport[]  @relation("IntegrityAssignments")
 
   @@index([badge])
   @@index([nationalId])
@@ -338,6 +342,7 @@ model Evidence {
   status          String   @default("collected")
   notes           String?  @db.Text
   chainOfCustody  Json
+  custodyEvents   CustodyEvent[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -450,23 +455,26 @@ model BackgroundCheck {
 // ==================== AUDIT & SYNC ====================
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  entityType String
-  entityId   String?
-  officerId  String?
-  officer    Officer? @relation(fields: [officerId], references: [id])
-  action     String
-  details    Json
-  ipAddress  String?
-  userAgent  String?
-  stationId  String?
-  success    Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  id           String   @id @default(uuid())
+  entityType   String
+  entityId     String?
+  officerId    String?
+  officer      Officer? @relation(fields: [officerId], references: [id])
+  action       String
+  details      Json
+  ipAddress    String?
+  userAgent    String?
+  stationId    String?
+  success      Boolean  @default(true)
+  previousHash String?
+  entryHash    String?
+  createdAt    DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([officerId])
   @@index([action])
   @@index([createdAt])
+  @@index([entryHash])
   @@map("audit_logs")
 }
 
@@ -738,4 +746,66 @@ model BulkImportJob {
   @@index([officerId])
   @@index([entityType])
   @@map("bulk_import_jobs")
+}
+
+// ==================== SECURITY GOVERNANCE ====================
+
+model CustodyEvent {
+  id            String   @id @default(uuid())
+  evidenceId    String
+  evidence      Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  officerId     String
+  officer       Officer  @relation(fields: [officerId], references: [id])
+  action        String   // COLLECTED, TRANSFERRED, EXAMINED, SEALED, SUBMITTED_TO_COURT, RETURNED
+  fromLocation  String?
+  toLocation    String?
+  notes         String?  @db.Text
+  signature     String   // SHA-256(evidenceId + officerId + action + createdAt)
+  createdAt     DateTime @default(now())
+
+  @@index([evidenceId])
+  @@index([officerId])
+  @@map("custody_events")
+}
+
+model PendingApproval {
+  id              String    @id @default(uuid())
+  requestedById   String
+  requestedBy     Officer   @relation("ApprovalRequests", fields: [requestedById], references: [id])
+  approvedById    String?
+  approvedBy      Officer?  @relation("ApprovalDecisions", fields: [approvedById], references: [id])
+  action          String    // bulk_delete_persons, pin_reset_commander, grant_api_access, etc.
+  resourceType    String
+  resourceId      String?
+  payload         Json
+  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, EXPIRED
+  rejectionReason String?   @db.Text
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+
+  @@index([requestedById])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("pending_approvals")
+}
+
+model IntegrityReport {
+  id                String    @id @default(uuid())
+  anonymousToken    String    @unique
+  category          String    // UNAUTHORIZED_ACCESS, DATA_ALTERATION, EXCESSIVE_QUERIES, IMPERSONATION, OTHER
+  description       String    @db.Text
+  evidenceLog       String?
+  status            String    @default("OPEN") // OPEN, UNDER_REVIEW, CLOSED_ACTIONED, CLOSED_UNFOUNDED
+  assignedToId      String?
+  assignedTo        Officer?  @relation("IntegrityAssignments", fields: [assignedToId], references: [id])
+  resolution        String?   @db.Text
+  isSystemGenerated Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([anonymousToken])
+  @@index([status])
+  @@index([category])
+  @@map("integrity_reports")
 }

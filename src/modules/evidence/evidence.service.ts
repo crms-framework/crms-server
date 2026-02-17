@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { EvidenceRepository, EvidenceFilters } from './evidence.repository';
+import { AuditService } from '../audit/audit.service';
 import { PaginationQueryDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { BusinessRuleException } from '../../common/errors/business-rule.exception';
+import { computeCustodySignature } from '../../common/utils/crypto.util';
 
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   collected: ['stored', 'analyzed'],
@@ -26,6 +28,7 @@ export class EvidenceService {
   constructor(
     private readonly evidenceRepository: EvidenceRepository,
     private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(filters: EvidenceFilters, pagination: PaginationQueryDto) {
@@ -54,7 +57,13 @@ export class EvidenceService {
       throw new NotFoundException(`Evidence not found: ${id}`);
     }
 
-    await this.logAudit(officerId, 'read', id, { qrCode: evidence.qrCode });
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'read',
+      details: { qrCode: evidence.qrCode },
+    });
 
     return this.mapEvidenceResponse(evidence);
   }
@@ -107,13 +116,30 @@ export class EvidenceService {
       fileMimeType: data.fileMimeType,
     });
 
+    // Create initial COLLECTED custody event with SHA-256 signature
+    const now = new Date();
+    const signature = computeCustodySignature(evidence.id, data.collectedBy, 'COLLECTED', now);
+    await this.evidenceRepository.createCustodyEvent({
+      evidenceId: evidence.id,
+      officerId: data.collectedBy,
+      action: 'COLLECTED',
+      toLocation: data.location,
+      signature,
+    });
+
     // Link to case
     await this.evidenceRepository.linkToCase(evidence.id, data.caseId, officerId);
 
-    await this.logAudit(officerId, 'create', evidence.id, {
-      qrCode: evidence.qrCode,
-      type: data.type,
-      caseId: data.caseId,
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: evidence.id,
+      officerId,
+      action: 'create',
+      details: {
+        qrCode: evidence.qrCode,
+        type: data.type,
+        caseId: data.caseId,
+      },
     });
 
     return evidence;
@@ -131,9 +157,15 @@ export class EvidenceService {
 
     const evidence = await this.evidenceRepository.update(id, data);
 
-    await this.logAudit(officerId, 'update', id, {
-      qrCode: existing.qrCode,
-      changes: Object.keys(data),
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'update',
+      details: {
+        qrCode: existing.qrCode,
+        changes: Object.keys(data),
+      },
     });
 
     return evidence;
@@ -161,10 +193,16 @@ export class EvidenceService {
 
     const evidence = await this.evidenceRepository.updateStatus(id, newStatus);
 
-    await this.logAudit(officerId, 'status_change', id, {
-      qrCode: existing.qrCode,
-      fromStatus: existing.status,
-      toStatus: newStatus,
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'status_change',
+      details: {
+        qrCode: existing.qrCode,
+        fromStatus: existing.status,
+        toStatus: newStatus,
+      },
     });
 
     return evidence;
@@ -172,7 +210,7 @@ export class EvidenceService {
 
   async addCustodyEvent(
     id: string,
-    event: { officerId: string; action: string; location?: string; notes?: string },
+    event: { officerId: string; action: string; fromLocation?: string; toLocation?: string; notes?: string },
     officerId: string,
   ) {
     const existing = await this.evidenceRepository.findById(id);
@@ -184,21 +222,65 @@ export class EvidenceService {
       throw new BusinessRuleException('Cannot modify chain of custody for sealed evidence');
     }
 
-    const validActions = ['collected', 'transferred', 'stored', 'retrieved', 'returned', 'disposed'];
+    const validActions = ['COLLECTED', 'TRANSFERRED', 'EXAMINED', 'SEALED', 'SUBMITTED_TO_COURT', 'RETURNED'];
     if (!validActions.includes(event.action)) {
       throw new BadRequestException(
         `Invalid custody action. Must be one of: ${validActions.join(', ')}`,
       );
     }
 
-    const evidence = await this.evidenceRepository.addCustodyEvent(id, event);
+    const now = new Date();
+    const signature = computeCustodySignature(id, event.officerId, event.action, now);
 
-    await this.logAudit(officerId, 'add_custody_event', id, {
-      qrCode: existing.qrCode,
-      custodyAction: event.action,
+    const custodyEvent = await this.evidenceRepository.createCustodyEvent({
+      evidenceId: id,
+      officerId: event.officerId,
+      action: event.action,
+      fromLocation: event.fromLocation,
+      toLocation: event.toLocation,
+      notes: event.notes,
+      signature,
     });
 
-    return evidence;
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'add_custody_event',
+      details: {
+        qrCode: existing.qrCode,
+        custodyAction: event.action,
+      },
+    });
+
+    return custodyEvent;
+  }
+
+  async getCustodyChain(id: string, officerId: string) {
+    const existing = await this.evidenceRepository.findById(id);
+    if (!existing) {
+      throw new NotFoundException(`Evidence not found: ${id}`);
+    }
+
+    const events = await this.evidenceRepository.getCustodyChain(id);
+
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'read_custody_chain',
+      details: { qrCode: existing.qrCode, eventCount: events.length },
+    });
+
+    return {
+      evidenceId: id,
+      qrCode: existing.qrCode,
+      type: existing.type,
+      description: existing.description,
+      status: existing.status,
+      isSealed: existing.isSealed,
+      events,
+    };
   }
 
   async seal(id: string, officerId: string) {
@@ -213,8 +295,22 @@ export class EvidenceService {
 
     const evidence = await this.evidenceRepository.seal(id, officerId);
 
-    await this.logAudit(officerId, 'seal', id, {
-      qrCode: existing.qrCode,
+    // Add SEALED custody event
+    const now = new Date();
+    const signature = computeCustodySignature(id, officerId, 'SEALED', now);
+    await this.evidenceRepository.createCustodyEvent({
+      evidenceId: id,
+      officerId,
+      action: 'SEALED',
+      signature,
+    });
+
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'seal',
+      details: { qrCode: existing.qrCode },
     });
 
     return evidence;
@@ -228,9 +324,15 @@ export class EvidenceService {
 
     const result = await this.evidenceRepository.linkToCase(evidenceId, caseId, officerId);
 
-    await this.logAudit(officerId, 'link_case', evidenceId, {
-      qrCode: existing.qrCode,
-      caseId,
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: evidenceId,
+      officerId,
+      action: 'link_case',
+      details: {
+        qrCode: existing.qrCode,
+        caseId,
+      },
     });
 
     return result;
@@ -252,9 +354,15 @@ export class EvidenceService {
 
     await this.evidenceRepository.delete(id);
 
-    await this.logAudit(officerId, 'delete', id, {
-      qrCode: existing.qrCode,
-      type: existing.type,
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: id,
+      officerId,
+      action: 'delete',
+      details: {
+        qrCode: existing.qrCode,
+        type: existing.type,
+      },
     });
 
     return { deleted: true };
@@ -296,27 +404,5 @@ export class EvidenceService {
       case: cases?.[0]?.case ?? null,
       caseId: cases?.[0]?.caseId ?? null,
     };
-  }
-
-  private async logAudit(
-    officerId: string,
-    action: string,
-    entityId: string,
-    details: Record<string, any>,
-  ) {
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          entityType: 'evidence',
-          entityId,
-          officerId,
-          action,
-          success: true,
-          details,
-        },
-      });
-    } catch (err) {
-      this.logger.error('Audit log write failed', err);
-    }
   }
 }

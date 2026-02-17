@@ -95,6 +95,16 @@ async function main() {
     { resource: 'agencies', action: 'read', scope: 'national' },
     { resource: 'agencies', action: 'update', scope: 'national' },
     { resource: 'agencies', action: 'delete', scope: 'national' },
+
+    // Integrity (Whistleblower / Professional Standards)
+    { resource: 'integrity', action: 'create', scope: 'own' },
+    { resource: 'integrity', action: 'read', scope: 'national' },
+    { resource: 'integrity', action: 'update', scope: 'national' },
+
+    // Approvals (Dual-Auth)
+    { resource: 'approvals', action: 'create', scope: 'national' },
+    { resource: 'approvals', action: 'read', scope: 'national' },
+    { resource: 'approvals', action: 'update', scope: 'national' },
   ];
 
   const createdPermissions = await Promise.all(
@@ -148,7 +158,10 @@ async function main() {
           (p.resource === 'roles' && p.action === 'read') ||
           (p.resource === 'audit' && p.action !== 'delete') ||
           (p.resource === 'settings' && p.action !== 'delete') ||
-          p.resource === 'agencies'
+          p.resource === 'agencies' ||
+          // Security governance
+          p.resource === 'integrity' ||
+          p.resource === 'approvals'
         ),
     )
     .map((p) => ({ id: p.id }));
@@ -184,7 +197,9 @@ async function main() {
           // Administrative read-only (new)
           (p.resource === 'roles' && p.action === 'read') ||
           (p.resource === 'audit' && p.action === 'read') ||
-          (p.resource === 'settings' && p.action === 'read')
+          (p.resource === 'settings' && p.action === 'read') ||
+          // Integrity - can submit reports
+          (p.resource === 'integrity' && p.action === 'create')
         ),
     )
     .map((p) => ({ id: p.id }));
@@ -214,7 +229,8 @@ async function main() {
           (p.resource === 'stations' && p.action === 'read') ||
           (p.resource === 'alerts' && p.action === 'read') ||
           (p.resource === 'reports' && p.action === 'read') ||
-          (p.resource === 'analytics' && p.action === 'read')),
+          (p.resource === 'analytics' && p.action === 'read') ||
+          (p.resource === 'integrity' && p.action === 'create')),
     )
     .map((p) => ({ id: p.id }));
 
@@ -232,13 +248,14 @@ async function main() {
   const clerkPermissionIds = createdPermissions
     .filter(
       (p) =>
-        p.scope === 'station' &&
+        (p.scope === 'station' &&
         (p.resource === 'evidence' || // All evidence actions
           (p.resource === 'cases' && p.action === 'read') ||
           (p.resource === 'persons' && p.action === 'read') ||
           (p.resource === 'officers' && p.action === 'read') ||
           (p.resource === 'stations' && p.action === 'read') ||
-          (p.resource === 'bgcheck' && p.action === 'read')),
+          (p.resource === 'bgcheck' && p.action === 'read'))) ||
+        (p.resource === 'integrity' && p.action === 'create' && p.scope === 'own'),
     )
     .map((p) => ({ id: p.id }));
 
@@ -254,7 +271,10 @@ async function main() {
   });
 
   const viewerPermissionIds = createdPermissions
-    .filter((p) => p.action === 'read' && p.scope === 'station')
+    .filter((p) =>
+      (p.action === 'read' && p.scope === 'station') ||
+      (p.resource === 'integrity' && p.action === 'create' && p.scope === 'own'),
+    )
     .map((p) => ({ id: p.id }));
 
   const viewerRole = await prisma.role.upsert({
@@ -268,7 +288,24 @@ async function main() {
     },
   });
 
-  console.log('Created 6 roles');
+  // ExternalAuditor: level 0, audit.read.national only
+  // Level 0 does NOT trigger SuperAdmin bypass (roleLevel === 1)
+  const externalAuditorPermissionIds = createdPermissions
+    .filter((p) => p.resource === 'audit' && p.action === 'read' && p.scope === 'national')
+    .map((p) => ({ id: p.id }));
+
+  const externalAuditorRole = await prisma.role.upsert({
+    where: { name: 'ExternalAuditor' },
+    update: { permissions: { set: externalAuditorPermissionIds } },
+    create: {
+      name: 'ExternalAuditor',
+      description: 'External civil oversight auditor - audit read-only access with short-lived sessions',
+      level: 0,
+      permissions: { connect: externalAuditorPermissionIds },
+    },
+  });
+
+  console.log('Created 7 roles');
 
   // ==================== STATIONS ====================
   console.log('Creating stations...');
@@ -871,11 +908,49 @@ async function main() {
 
   console.log('Created 6 evidence records with 4 case links');
 
+  // ==================== FRAMEWORK CONFIG (Security Governance) ====================
+  console.log('Creating security governance config entries...');
+
+  const securityConfigs = [
+    {
+      key: 'oversight.contactEmail',
+      category: 'oversight',
+      value: 'oversight@police.gov.sl',
+      description: 'Email address for civil oversight notifications',
+      isSystem: true,
+    },
+    {
+      key: 'oversight.contactPhone',
+      category: 'oversight',
+      value: '+232-XXX-XXXX',
+      description: 'Phone number for civil oversight SMS notifications',
+      isSystem: true,
+    },
+    {
+      key: 'approval.expiryHours',
+      category: 'oversight',
+      value: 24,
+      description: 'Number of hours before a pending approval expires',
+      isSystem: true,
+    },
+  ];
+
+  for (const cfg of securityConfigs) {
+    await prisma.frameworkConfig.upsert({
+      where: { key: cfg.key },
+      update: {},
+      create: cfg,
+    });
+  }
+
+  console.log(`Created ${securityConfigs.length} security governance config entries`);
+
   // ==================== SUMMARY ====================
   console.log('\nSeeding complete!\n');
   console.log('Database Summary:');
-  console.log(`  ${createdPermissions.length} permissions | 6 roles | 3 stations | 6 officers`);
+  console.log(`  ${createdPermissions.length} permissions | 7 roles | 3 stations | 6 officers`);
   console.log('  4 persons | 3 vehicles | 2 cases | 1 wanted record | 6 evidence');
+  console.log('  3 security governance config entries');
 }
 
 main()

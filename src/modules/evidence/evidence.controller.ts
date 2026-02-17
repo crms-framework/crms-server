@@ -7,11 +7,14 @@ import {
   Param,
   Body,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { EvidenceService } from './evidence.service';
+import { ReportsService } from '../reports/reports.service';
 import { CreateEvidenceDto } from './dto/create-evidence.dto';
 import { UpdateEvidenceDto } from './dto/update-evidence.dto';
 import { EvidenceFilterDto } from './dto/evidence-filter.dto';
@@ -22,7 +25,10 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 @ApiBearerAuth()
 @Controller('evidence')
 export class EvidenceController {
-  constructor(private readonly evidenceService: EvidenceService) {}
+  constructor(
+    private readonly evidenceService: EvidenceService,
+    private readonly reportsService: ReportsService,
+  ) {}
 
   @Get()
   @RequirePermissions('evidence', 'read', 'station')
@@ -65,6 +71,33 @@ export class EvidenceController {
   @ApiOperation({ summary: 'Get all evidence linked to a case' })
   findByCase(@Param('caseId') caseId: string) {
     return this.evidenceService.findByCase(caseId);
+  }
+
+  @Get(':id/chain-of-custody')
+  @RequirePermissions('evidence', 'read', 'station')
+  @ApiOperation({ summary: 'Get full chain of custody for evidence' })
+  getCustodyChain(
+    @Param('id') id: string,
+    @CurrentUser('id') officerId: string,
+  ) {
+    return this.evidenceService.getCustodyChain(id, officerId);
+  }
+
+  @Get(':id/custody-certificate')
+  @RequirePermissions('evidence', 'read', 'station')
+  @ApiOperation({ summary: 'Generate chain of custody PDF certificate' })
+  async getCustodyCertificate(
+    @Param('id') id: string,
+    @CurrentUser('id') officerId: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateCustodyCertificate(id, officerId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="custody-certificate-${id}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get(':id')

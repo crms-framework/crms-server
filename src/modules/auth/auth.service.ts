@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { hashPin, verifyPin } from '../../common/utils/hash.util';
 import { JwtPayload } from './strategies/jwt.strategy';
 
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly auditService: AuditService,
   ) {}
 
   async login(badge: string, pin: string, ipAddress?: string, userAgent?: string) {
@@ -89,15 +91,22 @@ export class AuthService {
       permissions,
     };
 
-    const accessToken = this.jwtService.sign(payload);
+    // ExternalAuditor (level 0) gets short-lived tokens
+    const isExternalAuditor = officer.role.level === 0;
+    const accessToken = this.jwtService.sign(
+      payload,
+      isExternalAuditor ? { expiresIn: '2h' } : {},
+    );
 
-    const refreshSignOpts = {
+    const refreshSignOpts: any = {
       secret: this.config.get<string>('auth.refreshSecret'),
-      expiresIn: this.config.get<string>('auth.refreshExpiry') ?? '7d',
+      expiresIn: isExternalAuditor
+        ? '2h'
+        : (this.config.get<string>('auth.refreshExpiry') ?? '7d'),
     };
     const refreshTokenValue = this.jwtService.sign(
       { sub: officer.id },
-      refreshSignOpts as any,
+      refreshSignOpts,
     );
 
     // Audit success
@@ -204,15 +213,21 @@ export class AuthService {
       permissions,
     };
 
-    const accessToken = this.jwtService.sign(newPayload);
+    const isExternalAuditor = officer.role.level === 0;
+    const accessToken = this.jwtService.sign(
+      newPayload,
+      isExternalAuditor ? { expiresIn: '2h' } : {},
+    );
 
-    const refreshOpts = {
+    const refreshOpts: any = {
       secret: this.config.get<string>('auth.refreshSecret'),
-      expiresIn: this.config.get<string>('auth.refreshExpiry') ?? '7d',
+      expiresIn: isExternalAuditor
+        ? '2h'
+        : (this.config.get<string>('auth.refreshExpiry') ?? '7d'),
     };
     const refreshTokenValue = this.jwtService.sign(
       { sub: officer.id },
-      refreshOpts as any,
+      refreshOpts,
     );
 
     return {
@@ -284,21 +299,15 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          entityType: 'officer',
-          entityId: officerId || undefined,
-          officerId: officerId || undefined,
-          action,
-          success,
-          details,
-          ipAddress,
-          userAgent,
-        },
-      });
-    } catch (err) {
-      this.logger.error('Audit log write failed', err);
-    }
+    await this.auditService.createAuditLog({
+      entityType: 'officer',
+      entityId: officerId || undefined,
+      officerId: officerId || undefined,
+      action,
+      success,
+      details,
+      ipAddress,
+      userAgent,
+    });
   }
 }

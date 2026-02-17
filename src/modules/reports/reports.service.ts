@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { ReportsRepository } from './reports.repository';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class ReportsService {
   constructor(
     private readonly reportsRepository: ReportsRepository,
     private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
   ) {}
 
   async getCaseReport(caseId: string, officerId: string) {
@@ -21,8 +23,12 @@ export class ReportsService {
       throw new NotFoundException(`Case not found: ${caseId}`);
     }
 
-    await this.logAudit(officerId, 'generate_case_report', caseId, {
-      caseNumber: report.caseNumber,
+    await this.auditService.createAuditLog({
+      entityType: 'report',
+      entityId: caseId,
+      officerId,
+      action: 'generate_case_report',
+      details: { caseNumber: report.caseNumber },
     });
 
     return {
@@ -48,8 +54,12 @@ export class ReportsService {
       throw new NotFoundException(`Station not found: ${stationId}`);
     }
 
-    await this.logAudit(officerId, 'generate_station_report', stationId, {
-      stationName: report.station.name,
+    await this.auditService.createAuditLog({
+      entityType: 'report',
+      entityId: stationId,
+      officerId,
+      action: 'generate_station_report',
+      details: { stationName: report.station.name },
     });
 
     return {
@@ -69,9 +79,12 @@ export class ReportsService {
       endDate ? new Date(endDate) : undefined,
     );
 
-    await this.logAudit(officerId, 'generate_compliance_report', 'system', {
-      startDate,
-      endDate,
+    await this.auditService.createAuditLog({
+      entityType: 'report',
+      entityId: 'system',
+      officerId,
+      action: 'generate_compliance_report',
+      details: { startDate, endDate },
     });
 
     return {
@@ -97,8 +110,12 @@ export class ReportsService {
       endDate: filters.endDate ? new Date(filters.endDate) : undefined,
     });
 
-    await this.logAudit(officerId, 'generate_custom_report', 'system', {
-      entityType: filters.entityType,
+    await this.auditService.createAuditLog({
+      entityType: 'report',
+      entityId: 'system',
+      officerId,
+      action: 'generate_custom_report',
+      details: { entityType: filters.entityType },
     });
 
     return {
@@ -140,33 +157,89 @@ export class ReportsService {
       ),
     ];
 
-    await this.logAudit(officerId, 'export_report', 'system', {
-      entityType: filters.entityType,
-      rowCount: data.length,
+    await this.auditService.createAuditLog({
+      entityType: 'report',
+      entityId: 'system',
+      officerId,
+      action: 'export_report',
+      details: {
+        entityType: filters.entityType,
+        rowCount: data.length,
+      },
     });
 
     return { csv: csvRows.join('\n'), count: data.length };
   }
 
-  private async logAudit(
-    officerId: string,
-    action: string,
-    entityId: string,
-    details: Record<string, any>,
-  ) {
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          entityType: 'report',
-          entityId,
-          officerId,
-          action,
-          success: true,
-          details,
+  async generateCustodyCertificate(evidenceId: string, officerId: string): Promise<Buffer> {
+    const evidence = await this.prisma.evidence.findUnique({
+      where: { id: evidenceId },
+      include: {
+        collectedBy: { select: { id: true, badge: true, name: true } },
+        station: { select: { id: true, name: true, code: true } },
+        custodyEvents: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            officer: { select: { id: true, badge: true, name: true } },
+          },
         },
-      });
-    } catch (err) {
-      this.logger.error('Audit log write failed', err);
+      },
+    });
+
+    if (!evidence) {
+      throw new NotFoundException(`Evidence not found: ${evidenceId}`);
     }
+
+    const officer = await this.prisma.officer.findUnique({
+      where: { id: officerId },
+      select: { name: true, badge: true },
+    });
+
+    const certData = {
+      evidenceId: evidence.id,
+      qrCode: evidence.qrCode,
+      type: evidence.type,
+      description: evidence.description || '',
+      status: evidence.status,
+      isSealed: evidence.isSealed,
+      collectedBy: evidence.collectedBy?.name || 'Unknown',
+      collectedDate: evidence.collectedDate.toISOString(),
+      station: evidence.station?.name || 'Unknown',
+      events: evidence.custodyEvents.map((e: any) => ({
+        action: e.action,
+        officerName: e.officer?.name || 'Unknown',
+        officerBadge: e.officer?.badge || 'N/A',
+        fromLocation: e.fromLocation,
+        toLocation: e.toLocation,
+        signature: e.signature,
+        createdAt: e.createdAt.toISOString(),
+      })),
+      generatedAt: new Date().toISOString(),
+      generatedBy: officer ? `${officer.name} (${officer.badge})` : officerId,
+    };
+
+    const React = await import('react');
+    const { renderToBuffer } = await import('@react-pdf/renderer');
+    const { ChainOfCustodyCertificate } = await import(
+      './templates/chain-of-custody.template.js'
+    );
+
+    const element = React.createElement(ChainOfCustodyCertificate, {
+      data: certData,
+    });
+    const pdfBuffer = await (renderToBuffer as any)(element);
+
+    await this.auditService.createAuditLog({
+      entityType: 'evidence',
+      entityId: evidenceId,
+      officerId,
+      action: 'generate_custody_certificate',
+      details: {
+        qrCode: evidence.qrCode,
+        eventCount: evidence.custodyEvents.length,
+      },
+    });
+
+    return Buffer.from(pdfBuffer);
   }
 }
